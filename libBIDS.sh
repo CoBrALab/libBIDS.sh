@@ -100,7 +100,7 @@ function libBIDSsh_parse_bids() {
   suffixes+="|magnitude1|magnitude2|phasediff|phase1|phase2|fieldmap|magnitude|epi)"
 
   # Allowed extensions
-  local extensions="@(.nii|.json|.tsv|bval)?(.gz)"
+  local extensions="@(.nii|.json|.tsv|bval|bvec)?(.gz)"
 
   # Piece together the pattern
   local pattern=${base_pattern}
