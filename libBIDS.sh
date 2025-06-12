@@ -129,5 +129,11 @@ function parse_bids() {
     done
 }
 
-parse_bids $1
-
+# bash "if __main__" implementation
+if ! (return 0 2>/dev/null); then
+  if [[ $# -eq 0 ]] ; then
+      echo 'error: the first argument must be a path to a bids dataset'
+      exit 1
+  fi
+  libBIDSsh_parse_bids $1
+fi

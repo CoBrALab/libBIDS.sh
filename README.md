@@ -11,3 +11,10 @@ Parses a BIDS dataset by:
 
 Implementation is "permissive" with regards to the BIDS spec, some combinations of optional fields are allowed in
 the parser that the BIDS spec does not allow.
+
+## Usage
+
+libBIDS.sh has two use cases.
+
+1. `source libBIDS.sh` in your bash scripts to provide the functions for parsing BIDS data structures
+2. Run `libBIDS.sh /path/to/bids/dataset` to output a CSV-formatted representation of the BIDS dataset
