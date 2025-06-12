@@ -87,6 +87,8 @@ function libBIDSsh_parse_bids() {
   local suffixes="_@(FLAIR|PDT2|PDw|T1w|T2starw|T2w|UNIT1|angio|inplaneT1|inplaneT2"
   # Parametric map suffixes
   suffixes+="|Chimap|M0map|MTRmap|MTVmap|MTsat|MWFmap|PDmap|R1map|R2map|R2starmap|RB1map|S0map|T1map|T1rho|T2map|T2starmap|TB1map"
+  # Defacing mask
+  suffixes+="|defacemask"
   # Depreciated anatomical suffixes
   # FLASH PD and T2star are depreciated but we support them
   suffixes+="|FLASH|PD|T2star"
