@@ -99,7 +99,9 @@ function libBIDSsh_parse_bids() {
   # Perfusion images
   suffixes+="|asl|m0scan|aslcontext|noRF"
   # Field maps
-  suffixes+="|magnitude1|magnitude2|phasediff|phase1|phase2|fieldmap|magnitude|epi)"
+  suffixes+="|magnitude1|magnitude2|phasediff|phase1|phase2|fieldmap|magnitude|epi"
+  # Modality agnostic files
+  suffixes+="|scans|sessions)"
 
   # Allowed extensions
   local extensions="@(.nii|.json|.tsv|bval|bvec)?(.gz)"
