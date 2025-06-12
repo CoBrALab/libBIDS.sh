@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+[[ "${BASH_VERSINFO:-0}" -ge 4 ]] || (echo "Error: bash >= 4.0 is required for this script" >&2 && exit 1)
+
 set -euo pipefail
 
 _libBIDSsh_parse_filename() {

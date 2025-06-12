@@ -12,9 +12,15 @@ Parses a BIDS dataset by:
 Implementation is "permissive" with regards to the BIDS spec, some combinations of optional fields are allowed in
 the parser that the BIDS spec does not allow.
 
+## Dependencies
+
+libBIDS.sh uses POSIX as well as bash functionality. The minimum version of bash supported is 4.0.
+Sorry Mac users, you'll need to upgrade the 18-year-old bash version (3.2, 2007) that Apple ships in OSX.
+
 ## Usage
 
 libBIDS.sh has two use cases.
 
 1. `source libBIDS.sh` in your bash scripts to provide the functions for parsing BIDS data structures
 2. Run `libBIDS.sh /path/to/bids/dataset` to output a CSV-formatted representation of the BIDS dataset
+
