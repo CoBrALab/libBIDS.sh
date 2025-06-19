@@ -114,7 +114,7 @@ _libBIDSsh_parse_filename() {
   local -a key_order=() # To maintain the order of keys
 
   # Store the full path and filename
-  arr[path]="${path}"
+  arr[path]=$(tr -s / <<<"${path}")
   arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
   arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<< $(basename $(dirname ${path})) || echo "NA")
