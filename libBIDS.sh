@@ -10,7 +10,7 @@ libBIDSsh_filter() {
   # Uses awk to perform filtering, see `man grep` for details on extended regex specification
   # All filtering are combined with AND
   #   -c, --columns <list>           Comma-separated list of column indices or column names
-  #   -R, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
+  #   -r, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
   local csv_data="$1"
   shift
 
@@ -24,7 +24,7 @@ libBIDSsh_filter() {
       columns="$2"
       shift 2
       ;;
-    -R | --row-filter)
+    -r | --row-filter)
       row_filter="$2"
       shift 2
       ;;
