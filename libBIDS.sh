@@ -136,7 +136,7 @@ function libBIDSsh_parse_bids() {
       fi
     done
     echo ""
-  done
+  done | sed 's/,*$//'
 }
 
 # bash "if __main__" implementation
