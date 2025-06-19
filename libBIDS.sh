@@ -15,7 +15,7 @@ libBIDSsh_filter() {
   shift
 
   local columns=""
-  local row_filter=""
+  local row_filters=()
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -25,7 +25,7 @@ libBIDSsh_filter() {
       shift 2
       ;;
     -r | --row-filter)
-      row_filter="$2"
+      row_filters+=("$2")
       shift 2
       ;;
     *)
@@ -35,14 +35,24 @@ libBIDSsh_filter() {
     esac
   done
 
+  # Convert row filters array to a delimiter-separated string that awk can parse
+  local row_filters_str=$(printf "%s\n" "${row_filters[@]}" | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
+
   awk -v columns="$columns" \
-    -v row_filter="$row_filter" \
+    -v row_filters_str="$row_filters_str" \
     'BEGIN {
             FS=","; OFS=",";
             split(columns, cols, ",");
-            split(row_filter, filter_arr, ":");
-            filter_col = filter_arr[1];
-            filter_pattern = filter_arr[2];
+
+            # Parse row filters
+            filter_count = split(row_filters_str, filter_lines, "\n");
+            for (i = 1; i <= filter_count; i++) {
+                split(filter_lines[i], filter_parts, "\t");
+                if (length(filter_parts) >= 2) {
+                    filters[i]["col"] = filter_parts[1];
+                    filters[i]["pattern"] = filter_parts[2];
+                }
+            }
         }
         NR == 1 {
             # Process header
@@ -75,18 +85,20 @@ libBIDSsh_filter() {
             next;
         }
         {
-            # Check row filter if specified
-            if (row_filter != "") {
-                # Determine column for filtering
-                if (filter_col in colnames) {
-                    col = colnames[filter_col];
-                } else if (filter_col ~ /^[0-9]+$/) {
-                    col = filter_col;
-                } else {
-                    exit 1;
-                }
+            # Check all row filters if specified (combined with AND)
+            if (filter_count > 0) {
+                for (i = 1; i <= filter_count; i++) {
+                    # Determine column for filtering
+                    if (filters[i]["col"] in colnames) {
+                        col = colnames[filters[i]["col"]];
+                    } else if (filters[i]["col"] ~ /^[0-9]+$/) {
+                        col = filters[i]["col"];
+                    } else {
+                        exit 1;
+                    }
 
-                if ($col !~ filter_pattern) next;
+                    if ($col !~ filters[i]["pattern"]) next;
+                }
             }
 
             # Print row (selected columns or all)
