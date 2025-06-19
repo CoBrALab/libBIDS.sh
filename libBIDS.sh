@@ -4,6 +4,102 @@
 
 set -euo pipefail
 
+libBIDSsh_filter() {
+  # libBIDSsh_filter
+  # function to filter csv-structured BIDS data, returning specified columns and optionally filtering by row content
+  # Uses awk to perform filtering, see `man grep` for details on extended regex specification
+  # All filtering are combined with AND
+  #   -c, --columns <list>           Comma-separated list of column indices or column names
+  #   -R, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
+  local csv_data="$1"
+  shift
+
+  local columns=""
+  local row_filter=""
+
+  # Parse options
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -c | --columns)
+      columns="$2"
+      shift 2
+      ;;
+    -R | --row-filter)
+      row_filter="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      return 1
+      ;;
+    esac
+  done
+
+  awk -v columns="$columns" \
+    -v row_filter="$row_filter" \
+    'BEGIN {
+            FS=","; OFS=",";
+            split(columns, cols, ",");
+            split(row_filter, filter_arr, ":");
+            filter_col = filter_arr[1];
+            filter_pattern = filter_arr[2];
+        }
+        NR == 1 {
+            # Process header
+            for (i = 1; i <= NF; i++) {
+                colnames[$i] = i;
+            }
+
+            # Determine columns to keep
+            if (columns != "") {
+                delete outcols;
+                outcount = 0;
+                for (i in cols) {
+                    if (cols[i] in colnames) {
+                        # Column name provided
+                        outcols[++outcount] = colnames[cols[i]];
+                    } else if (cols[i] ~ /^[0-9]+$/) {
+                        # Column index provided
+                        outcols[++outcount] = cols[i];
+                    }
+                }
+
+                # Print selected columns from header
+                for (i = 1; i <= outcount; i++) {
+                    printf "%s%s", $outcols[i], (i < outcount ? OFS : ORS);
+                }
+            } else {
+                # Print all columns if none specified
+                print;
+            }
+            next;
+        }
+        {
+            # Check row filter if specified
+            if (row_filter != "") {
+                # Determine column for filtering
+                if (filter_col in colnames) {
+                    col = colnames[filter_col];
+                } else if (filter_col ~ /^[0-9]+$/) {
+                    col = filter_col;
+                } else {
+                    exit 1;
+                }
+
+                if ($col !~ filter_pattern) next;
+            }
+
+            # Print row (selected columns or all)
+            if (columns != "") {
+                for (i = 1; i <= outcount; i++) {
+                    printf "%s%s", $outcols[i], (i < outcount ? OFS : ORS);
+                }
+            } else {
+                print;
+            }
+        }' <<<"$csv_data"
+}
+
 _libBIDSsh_parse_filename() {
   # Breakup the BIDS filename components and return a key-value pair array
   # Along with a key ordering array
