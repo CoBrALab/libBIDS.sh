@@ -234,6 +234,49 @@ libBIDSsh_parse_bids() {
   done | sed 's/,*$//'
 }
 
+libBIDSsh_column_to_array() {
+  # libBIDSsh_column_to_array
+  # function to convert a column from a libBIDSsh csv data structure to an array
+  # Usage example
+  # declare -a my_array
+  # libBIDSsh_column_to_array "${bids_csv_data}" "column_name" my_array
+
+  local csv_data="$1"
+  local column="$2"
+  local -n array_ref="$3" # nameref to the array variable
+
+  # Clear the array in case it's not empty
+  array_ref=()
+
+  # Use awk to extract the column (skipping header row)
+  while IFS= read -r line; do
+    array_ref+=("$line")
+  done < <(awk -v col="$column" '
+        BEGIN { FS="," }
+        NR == 1 {
+            if (col ~ /^[0-9]+$/) {
+                col_idx = col
+            } else {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == col) {
+                        col_idx = i
+                        break
+                    }
+                }
+            }
+            if (!col_idx) exit 1
+            next  # Skip header row
+        }
+        { print $col_idx }
+    ' <<<"$csv_data")
+
+  # Check if awk succeeded
+  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"$csv_data") -gt 1 ]; then
+    echo "Error: Column '$column' not found or no data rows present" >&2
+    return 1
+  fi
+}
+
 # bash "if __main__" implementation
 if ! (return 0 2>/dev/null); then
   if [[ $# -eq 0 ]] ; then
