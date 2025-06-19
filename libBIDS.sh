@@ -251,17 +251,23 @@ libBIDSsh_column_to_array() {
   # function to convert a column from a libBIDSsh csv data structure to an array
   # Usage example
   # declare -a my_array
-  # libBIDSsh_column_to_array "${bids_csv_data}" "column_name" my_array
+  # libBIDSsh_column_to_array "${bids_csv_data}" "column_name" my_array [unique] [exclude_NA]
 
   local csv_data="$1"
   local column="$2"
   local -n array_ref="$3" # nameref to the array variable
+  local unique="${4:-true}"
+  local exclude_NA="${5:-true}"
 
   # Clear the array in case it's not empty
   array_ref=()
 
   # Use awk to extract the column (skipping header row)
   while IFS= read -r line; do
+    # Skip NA entries if exclude_NA is true
+    if [[ "$exclude_NA" == "true" && "$line" == "NA" ]]; then
+      continue
+    fi
     array_ref+=("$line")
   done < <(awk -v col="$column" '
         BEGIN { FS="," }
@@ -286,6 +292,19 @@ libBIDSsh_column_to_array() {
   if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"$csv_data") -gt 1 ]; then
     echo "Error: Column '$column' not found or no data rows present" >&2
     return 1
+  fi
+
+  # Apply unique filter if requested
+  if [[ "$unique" == "true" ]]; then
+    local -a unique_array
+    local -A seen
+    for item in "${array_ref[@]}"; do
+      if [[ -z "${seen[$item]+x}" ]]; then
+        unique_array+=("$item")
+        seen["$item"]=1
+      fi
+    done
+    array_ref=("${unique_array[@]}")
   fi
 }
 
