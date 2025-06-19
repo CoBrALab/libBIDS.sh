@@ -152,7 +152,9 @@ _libBIDSsh_parse_filename() {
 
 }
 
-function libBIDSsh_parse_bids() {
+
+
+libBIDSsh_parse_bids() {
 
   local bidspath=$1
 
