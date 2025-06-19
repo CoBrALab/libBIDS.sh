@@ -117,19 +117,15 @@ _libBIDSsh_parse_filename() {
   arr[path]="${path}"
   arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
-  arr[type]="$(basename $(dirname ${path}))"
+  arr[type]=$(grep -E '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname ${path})) || echo "NA")
 
   local name_no_ext="${filename%%.*}"
 
   # Split into parts separated by _
   IFS='_' read -ra parts <<<"${name_no_ext}"
 
-  # Subject
-  arr[sub]="${parts[0]}"
-  key_order+=("sub")
-
   # Process middle parts which are _<key>-<value>
-  for ((i = 1; i < ${#parts[@]} - 1; i++)); do
+  for ((i = 0; i < ${#parts[@]} - 1; i++)); do
     local part="${parts[$i]}"
     if [[ ${part} =~ ^([^-]+)-(.*)$ ]]; then
       local key="${BASH_REMATCH[1]}"
@@ -159,8 +155,7 @@ function libBIDSsh_parse_bids() {
   local bidspath=$1
 
   # Build the pattern piece by piece
-  # Subject pattern
-  local base_pattern="sub-+([a-zA-Z0-9])" # sub-<label>
+  local base_pattern="*"
 
   # Optional components
   local optional_components=(
@@ -214,7 +209,7 @@ function libBIDSsh_parse_bids() {
   shopt -s nullglob
   shopt -s globstar
 
-  local files=(${bidspath}/sub-*/**/${pattern})
+  local files=("${bidspath}"/**/${pattern})
 
   shopt -u extglob
   shopt -u nullglob
