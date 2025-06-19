@@ -117,7 +117,8 @@ _libBIDSsh_parse_filename() {
   arr[path]="${path}"
   arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
-  arr[type]=$(grep -E '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname ${path})) || echo "NA")
+  arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<< $(basename $(dirname ${path})) || echo "NA")
+  arr[derivatives]=$(grep -o 'derivatives/.*/' <<< ${path} | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
 
@@ -142,6 +143,7 @@ _libBIDSsh_parse_filename() {
   key_order+=("suffix")
   key_order+=("extension")
   key_order+=("type")
+  key_order+=("derivatives")
   key_order+=("path")
   key_order+=("filename")
 
@@ -215,11 +217,11 @@ function libBIDSsh_parse_bids() {
   shopt -u nullglob
   shopt -u globstar
 
-  echo "sub,ses,task,acq,ce,rec,dir,run,recording,mod,echo,part,chunk,suffix,extension,type,filename,path"
+  echo "sub,ses,task,acq,ce,rec,dir,run,recording,mod,echo,part,chunk,suffix,extension,type,derivatives,filename,path"
   for file in ${files[@]}; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
-    for key in sub ses task acq ce rec dir run recording mod echo part chunk suffix extension type filename path; do
+    for key in sub ses task acq ce rec dir run recording mod echo part chunk suffix extension type derivatives filename path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
         echo -n "${file_info[${key}]},"
       else
