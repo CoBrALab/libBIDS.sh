@@ -4,11 +4,13 @@
 
 set -euo pipefail
 
-libBIDSsh_filter() {
+libBIDSsh_csv_filter() {
   # libBIDSsh_filter
   # function to filter csv-structured BIDS data, returning specified columns and optionally filtering by row content
   # Uses awk to perform filtering, see `man grep` for details on extended regex specification
   # All filtering are combined with AND
+  # Usage:
+  # libBIDSsh_csv_filter "${csv_data}" [-c column,column...] [-r filter] .. [-r filter]
   #   -c, --columns <list>           Comma-separated list of column indices or column names
   #   -r, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
   local csv_data="$1"
@@ -115,6 +117,7 @@ libBIDSsh_filter() {
 _libBIDSsh_parse_filename() {
   # Breakup the BIDS filename components and return a key-value pair array
   # Along with a key ordering array
+  # Internal function
   local path="$1"
   local -n arr="$2" # nameref to the associative array
 
@@ -129,8 +132,8 @@ _libBIDSsh_parse_filename() {
   arr[path]=$(tr -s / <<<"${path}")
   arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
-  arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<< $(basename $(dirname ${path})) || echo "NA")
-  arr[derivatives]=$(grep -o 'derivatives/.*/' <<< ${path} | awk -F/ '{print $2}' || echo "NA")
+  arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname ${path})) || echo "NA")
+  arr[derivatives]=$(grep -o 'derivatives/.*/' <<<${path} | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
 
@@ -164,9 +167,7 @@ _libBIDSsh_parse_filename() {
 
 }
 
-
-
-libBIDSsh_parse_bids() {
+libBIDSsh_parse_bids_to_csv() {
 
   local bidspath=$1
 
@@ -246,10 +247,10 @@ libBIDSsh_parse_bids() {
   done | sed 's/,*$//'
 }
 
-libBIDSsh_column_to_array() {
-  # libBIDSsh_column_to_array
+libBIDSsh_csv_column_to_array() {
   # function to convert a column from a libBIDSsh csv data structure to an array
-  # Usage example
+  # optionally return only unique entries and/or exclude NA
+  # Usage example:
   # declare -a my_array
   # libBIDSsh_column_to_array "${bids_csv_data}" "column_name" my_array [unique] [exclude_NA]
 
@@ -310,9 +311,9 @@ libBIDSsh_column_to_array() {
 
 # bash "if __main__" implementation
 if ! (return 0 2>/dev/null); then
-  if [[ $# -eq 0 ]] ; then
-      echo 'error: the first argument must be a path to a bids dataset'
-      exit 1
+  if [[ $# -eq 0 ]]; then
+    echo 'error: the first argument must be a path to a bids dataset'
+    exit 1
   fi
-  libBIDSsh_parse_bids $1
+  libBIDSsh_parse_bids_to_csv "${1}"
 fi
