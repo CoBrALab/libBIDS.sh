@@ -40,8 +40,8 @@ libBIDSsh_csv_filter() {
   # Convert row filters array to a delimiter-separated string that awk can parse
   local row_filters_str=$(printf "%s\n" "${row_filters[@]}" | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
 
-  awk -v columns="$columns" \
-    -v row_filters_str="$row_filters_str" \
+  awk -v columns="${columns}" \
+    -v row_filters_str="${row_filters_str}" \
     'BEGIN {
             FS=","; OFS=",";
             split(columns, cols, ",");
@@ -111,7 +111,7 @@ libBIDSsh_csv_filter() {
             } else {
                 print;
             }
-        }' <<<"$csv_data"
+        }' <<<"${csv_data}"
 }
 
 _libBIDSsh_parse_filename() {
@@ -132,8 +132,8 @@ _libBIDSsh_parse_filename() {
   arr[path]=$(tr -s / <<<"${path}")
   arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
-  arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname ${path})) || echo "NA")
-  arr[derivatives]=$(grep -o 'derivatives/.*/' <<<${path} | awk -F/ '{print $2}' || echo "NA")
+  arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname "${path}")) || echo "NA")
+  arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
 
@@ -142,12 +142,12 @@ _libBIDSsh_parse_filename() {
 
   # Process middle parts which are _<key>-<value>
   for ((i = 0; i < ${#parts[@]} - 1; i++)); do
-    local part="${parts[$i]}"
+    local part="${parts[${i}]}"
     if [[ ${part} =~ ^([^-]+)-(.*)$ ]]; then
       local key="${BASH_REMATCH[1]}"
       local value="${BASH_REMATCH[2]}"
       # Store the key-value pair
-      arr["$key"]="${key}-${value}"
+      arr["${key}"]="${key}-${value}"
       # Record the order of the key
       key_order+=("${key}")
     fi
@@ -216,7 +216,7 @@ libBIDSsh_parse_bids_to_csv() {
 
   # Piece together the pattern
   local pattern=${base_pattern}
-  for entry in ${optional_components[@]}; do
+  for entry in "${optional_components[@]}"; do
     pattern+=${entry}
   done
   pattern+=${suffixes}
@@ -233,7 +233,7 @@ libBIDSsh_parse_bids_to_csv() {
   shopt -u globstar
 
   echo "sub,ses,task,acq,ce,rec,dir,run,recording,mod,echo,part,chunk,suffix,extension,type,derivatives,filename,path"
-  for file in ${files[@]}; do
+  for file in "${files[@]}"; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
     for key in sub ses task acq ce rec dir run recording mod echo part chunk suffix extension type derivatives filename path; do
@@ -252,7 +252,7 @@ libBIDSsh_csv_column_to_array() {
   # optionally return only unique entries and/or exclude NA
   # Usage example:
   # declare -a my_array
-  # libBIDSsh_column_to_array "${bids_csv_data}" "column_name" my_array [unique] [exclude_NA]
+  # libBIDSsh_csv_column_to_array "${bids_csv_data}" "column_name" my_array [unique] [exclude_NA]
 
   local csv_data="$1"
   local column="$2"
@@ -266,11 +266,11 @@ libBIDSsh_csv_column_to_array() {
   # Use awk to extract the column (skipping header row)
   while IFS= read -r line; do
     # Skip NA entries if exclude_NA is true
-    if [[ "$exclude_NA" == "true" && "$line" == "NA" ]]; then
+    if [[ "${exclude_NA}" == "true" && "${line}" == "NA" ]]; then
       continue
     fi
-    array_ref+=("$line")
-  done < <(awk -v col="$column" '
+    array_ref+=("${line}")
+  done < <(awk -v col="${column}" '
         BEGIN { FS="," }
         NR == 1 {
             if (col ~ /^[0-9]+$/) {
@@ -287,22 +287,22 @@ libBIDSsh_csv_column_to_array() {
             next  # Skip header row
         }
         { print $col_idx }
-    ' <<<"$csv_data")
+    ' <<<"${csv_data}")
 
   # Check if awk succeeded
-  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"$csv_data") -gt 1 ]; then
-    echo "Error: Column '$column' not found or no data rows present" >&2
+  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${csv_data}") -gt 1 ]; then
+    echo "Error: Column '${column}' not found or no data rows present" >&2
     return 1
   fi
 
   # Apply unique filter if requested
-  if [[ "$unique" == "true" ]]; then
+  if [[ "${unique}" == "true" ]]; then
     local -a unique_array
     local -A seen
     for item in "${array_ref[@]}"; do
-      if [[ -z "${seen[$item]+x}" ]]; then
-        unique_array+=("$item")
-        seen["$item"]=1
+      if [[ -z "${seen[${item}]+x}" ]]; then
+        unique_array+=("${item}")
+        seen["${item}"]=1
       fi
     done
     array_ref=("${unique_array[@]}")
@@ -328,7 +328,7 @@ libBIDS_csv_iterator() {
   local sort_columns=("$@")
 
   # Read all lines into an array
-  IFS=$'\n' read -d '' -r -a lines <<<"$csv_var" || true
+  IFS=$'\n' read -d '' -r -a lines <<<"${csv_var}" || true
 
   # Extract header and data lines
   local header="${lines[0]}"
@@ -337,20 +337,20 @@ libBIDS_csv_iterator() {
   # If we have sort columns, sort the data
   if ((${#sort_columns[@]} > 0)); then
     # Get column indices for sorting
-    IFS=',' read -r -a headers <<<"$header"
+    IFS=',' read -r -a headers <<<"${header}"
     declare -A column_indices
     for i in "${!headers[@]}"; do
-      column_indices["${headers[i]}"]=$i
+      column_indices["${headers[i]}"]=${i}
     done
 
     # Build sort keys (-k options for sort)
     local sort_keys=()
     for col in "${sort_columns[@]}"; do
-      if [[ -v "column_indices[$col]" ]]; then
-        local idx=$((column_indices["$col"] + 1)) # sort uses 1-based indexing
+      if [[ -v "column_indices[${col}]" ]]; then
+        local idx=$((column_indices["${col}"] + 1)) # sort uses 1-based indexing
         sort_keys+=("-k$idx,$idx")
       else
-        echo "Error: Column '$col' not found in CSV header" >&2
+        echo "Error: Column '${col}' not found in CSV header" >&2
         return 1
       fi
     done
@@ -364,10 +364,6 @@ libBIDS_csv_iterator() {
     # No sorting needed
     sorted_data=("${data_lines[@]}")
   fi
-
-  # Store the full sorted CSV in a local variable (header + sorted data)
-  local sorted_csv
-  sorted_csv=$(printf "%s\n" "$header" "${sorted_data[@]}")
 
   # Use a line counter local to this function call
   local current_line=${arr_ref[__current_line]:-0}
@@ -384,7 +380,7 @@ libBIDS_csv_iterator() {
 
   # Process header if we're on the first line
   if ((current_line == 0)); then
-    IFS=',' read -r -a headers <<<"$header"
+    IFS=',' read -r -a headers <<<"${header}"
     ((current_line++))
   fi
 
@@ -400,7 +396,7 @@ libBIDS_csv_iterator() {
 
   # Update the line counter for next time (stored in array, but cleared next call)
   ((current_line++))
-  arr_ref[__current_line]=$current_line
+  arr_ref[__current_line]=${current_line}
 
   return 0
 }
