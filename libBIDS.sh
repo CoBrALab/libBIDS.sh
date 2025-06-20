@@ -10,14 +10,16 @@ libBIDSsh_csv_filter() {
   # Uses awk to perform filtering, see `man grep` for details on extended regex specification
   # All filtering are combined with AND
   # Usage:
-  # libBIDSsh_csv_filter "${csv_data}" [-c column,column...] [-r filter] .. [-r filter]
+  # libBIDSsh_csv_filter "${csv_data}" [-c column,column...] [-r filter] .. [-r filter] [-d column,column...]
   #   -c, --columns <list>           Comma-separated list of column indices or column names
   #   -r, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
+  #   -d, --drop-na <list>           Comma-separated list of columns to check for NA values (drops rows where any specified column equals "NA")
   local csv_data="$1"
   shift
 
   local columns=""
   local row_filters=()
+  local drop_na_cols=""
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -28,6 +30,10 @@ libBIDSsh_csv_filter() {
       ;;
     -r | --row-filter)
       row_filters+=("$2")
+      shift 2
+      ;;
+    -d | --drop-na)
+      drop_na_cols="$2"
       shift 2
       ;;
     *)
@@ -42,9 +48,11 @@ libBIDSsh_csv_filter() {
 
   awk -v columns="${columns}" \
     -v row_filters_str="${row_filters_str}" \
+    -v drop_na_cols="${drop_na_cols}" \
     'BEGIN {
             FS=","; OFS=",";
             split(columns, cols, ",");
+            split(drop_na_cols, na_cols, ",");
 
             # Parse row filters
             filter_count = split(row_filters_str, filter_lines, "\n");
@@ -100,6 +108,22 @@ libBIDSsh_csv_filter() {
                     }
 
                     if ($col !~ filters[i]["pattern"]) next;
+                }
+            }
+
+            # Check for NA values in specified columns
+            if (drop_na_cols != "") {
+                for (i in na_cols) {
+                    # Determine column to check
+                    if (na_cols[i] in colnames) {
+                        col = colnames[na_cols[i]];
+                    } else if (na_cols[i] ~ /^[0-9]+$/) {
+                        col = na_cols[i];
+                    } else {
+                        exit 1;
+                    }
+
+                    if ($col == "NA") next;
                 }
             }
 
