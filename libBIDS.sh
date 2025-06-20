@@ -309,6 +309,102 @@ libBIDSsh_csv_column_to_array() {
   fi
 }
 
+libBIDS_csv_iterator() {
+  # function which takes in libBIDS.sh CSV and returns one row as key-value pairs
+  # optionally sorting the CSV first according to one or more columns
+  # do not change sorting between calls, only basic line-number state is kept
+  # libBIDS_csv_iterator "${csv_data}" row_data [sort_column_name] ... [sort_column_name]
+  # Usage example:
+  # declare -A row_data
+  # while libBIDS_csv_iterator "${csv_data}" row_data [sorting_column]; do
+  #   declare -p row_data #Show the contents of row_data key-value pairs
+  # done
+
+  local csv_var=$1    # Name of the variable containing CSV data
+  local -n arr_ref=$2 # Name reference to the associative array
+  shift 2             # Remaining arguments are sort columns
+
+  # Store sort columns
+  local sort_columns=("$@")
+
+  # Read all lines into an array
+  IFS=$'\n' read -d '' -r -a lines <<<"$csv_var" || true
+
+  # Extract header and data lines
+  local header="${lines[0]}"
+  local data_lines=("${lines[@]:1}")
+
+  # If we have sort columns, sort the data
+  if ((${#sort_columns[@]} > 0)); then
+    # Get column indices for sorting
+    IFS=',' read -r -a headers <<<"$header"
+    declare -A column_indices
+    for i in "${!headers[@]}"; do
+      column_indices["${headers[i]}"]=$i
+    done
+
+    # Build sort keys (-k options for sort)
+    local sort_keys=()
+    for col in "${sort_columns[@]}"; do
+      if [[ -v "column_indices[$col]" ]]; then
+        local idx=$((column_indices["$col"] + 1)) # sort uses 1-based indexing
+        sort_keys+=("-k$idx,$idx")
+      else
+        echo "Error: Column '$col' not found in CSV header" >&2
+        return 1
+      fi
+    done
+
+    # Sort the data lines
+    IFS=$'\n' sorted_data=($(
+      printf "%s\n" "${data_lines[@]}" |
+        sort --version-sort -t, "${sort_keys[@]}"
+    )) || true
+  else
+    # No sorting needed
+    sorted_data=("${data_lines[@]}")
+  fi
+
+  # Store the full sorted CSV in a local variable (header + sorted data)
+  local sorted_csv
+  sorted_csv=$(printf "%s\n" "$header" "${sorted_data[@]}")
+
+  # Use a line counter local to this function call
+  local current_line=${arr_ref[__current_line]:-0}
+
+  # If we're at the end, return failure (for while loop exit)
+  if ((current_line >= ${#sorted_data[@]} + 1)); then # +1 for header
+    # Clear the array before returning
+    arr_ref=()
+    return 1
+  fi
+
+  # Clear the array completely (no state maintained between calls)
+  arr_ref=()
+
+  # Process header if we're on the first line
+  if ((current_line == 0)); then
+    IFS=',' read -r -a headers <<<"$header"
+    ((current_line++))
+  fi
+
+  # Read the current data line (note we use sorted_data which is 0-based)
+  if ((current_line > 0 && current_line <= ${#sorted_data[@]} + 1)); then
+    IFS=',' read -r -a values <<<"${sorted_data[current_line - 1]}"
+
+    # Store key-value pairs in the array
+    for i in "${!headers[@]}"; do
+      arr_ref["${headers[i]}"]="${values[i]}"
+    done
+  fi
+
+  # Update the line counter for next time (stored in array, but cleared next call)
+  ((current_line++))
+  arr_ref[__current_line]=$current_line
+
+  return 0
+}
+
 # bash "if __main__" implementation
 if ! (return 0 2>/dev/null); then
   if [[ $# -eq 0 ]]; then
