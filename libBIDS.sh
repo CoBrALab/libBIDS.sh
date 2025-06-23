@@ -251,6 +251,82 @@ _libBIDSsh_parse_filename() {
 
 }
 
+libBIDSsh_extension_json_rows_to_column_json_path() {
+  local csv_data="$1"
+
+  awk -F',' '
+  BEGIN {
+    OFS = ",";
+  }
+
+  NR == 1 {
+    # Capture header, get column indexes
+    for (i = 1; i <= NF; i++) {
+      col = tolower($i);
+      header_map[col] = i;
+      headers[i] = $i;
+    }
+
+    ext_idx  = header_map["extension"];
+    path_idx = header_map["path"];
+
+    if (!ext_idx || !path_idx) {
+      print "Error: Required columns (extension, path) not found" > "/dev/stderr";
+      exit 1;
+    }
+
+    print $0, "json_path";  # add json_path column
+    next;
+  }
+
+  {
+    row[NR] = $0;
+    extension = $ext_idx;
+    path = $path_idx;
+
+    # Construct key by all fields except extension and path
+    key = "";
+    for (i = 1; i <= NF; i++) {
+      if (i != ext_idx && i != path_idx) key = key "|" $i;
+    }
+
+    row_key[NR] = key;
+    row_ext[NR] = extension;
+    row_path[NR] = path;
+
+    if (tolower(extension) == "json") {
+      json_path[key] = path;
+      json_row[NR] = 1;
+    } else {
+      has_non_json[key] = 1;
+    }
+
+    line_nums[NR] = 1;
+  }
+
+  END {
+    for (ln = 2; ln <= NR; ln++) {
+      key = row_key[ln];
+      is_json = (ln in json_row);
+      has_match = (key in has_non_json);
+
+      if (is_json && has_match) {
+        # Drop matched json row
+        continue;
+      }
+
+      if (is_json && !has_match) {
+        print row[ln], row_path[ln];  # unmatched json
+      } else if (!is_json && (key in json_path)) {
+        print row[ln], json_path[key];  # matched non-json
+      } else {
+        print row[ln], "NA";  # no json available
+      }
+    }
+  }
+  ' <<<"$csv_data"
+}
+
 libBIDSsh_parse_bids_to_csv() {
 
   local bidspath=$1
