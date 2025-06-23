@@ -216,7 +216,6 @@ _libBIDSsh_parse_filename() {
 
   # Store the full path and filename
   arr[path]=$(tr -s / <<<"${path}")
-  arr[filename]="${filename}"
   arr[extension]="${filename#*.}"
   arr[type]=$(grep -E -o '(func|dwi|fmap|anat|perf|meg|eeg|ieeg|beh|pet|micr|nirs|motion|mrs)' <<<$(basename $(dirname "${path}")) || echo "NA")
   arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
@@ -246,7 +245,6 @@ _libBIDSsh_parse_filename() {
   key_order+=("type")
   key_order+=("derivatives")
   key_order+=("path")
-  key_order+=("filename")
 
   # Store the key order in the array
   arr[_key_order]="${key_order[*]}"
@@ -318,11 +316,11 @@ libBIDSsh_parse_bids_to_csv() {
   shopt -u nullglob
   shopt -u globstar
 
-  echo "sub,ses,task,acq,ce,rec,dir,run,recording,mod,echo,part,chunk,suffix,extension,type,derivatives,filename,path"
+  echo "derivatives,sub,ses,type,task,acq,ce,rec,dir,run,recording,mod,echo,part,chunk,suffix,extension,path"
   for file in "${files[@]}"; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
-    for key in sub ses task acq ce rec dir run recording mod echo part chunk suffix extension type derivatives filename path; do
+    for key in derivatives sub ses type task acq ce rec dir run recording mod echo part chunk suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
         echo -n "${file_info[${key}]},"
       else
