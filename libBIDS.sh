@@ -138,6 +138,68 @@ libBIDSsh_csv_filter() {
         }' <<<"${csv_data}"
 }
 
+libBIDSsh_drop_na_columns() {
+  local csv_data="$1"
+  awk -F, '
+    BEGIN {OFS=","}
+    NR == 1 {
+        # Save header and initialize column tracking
+        header = $0
+        for (i = 1; i <= NF; i++) {
+            col_all_na[i] = 1  # Assume all columns are all NA initially
+            header_cols[i] = $i  # Store header names
+        }
+        next
+    }
+    {
+        for (i = 1; i <= NF; i++) {
+            if ($i != "NA") {
+                col_all_na[i] = 0  # Mark column as not all NA
+            }
+        }
+        # Store all rows for later printing
+        rows[NR] = $0
+    }
+    END {
+        # Determine which columns to keep
+        split(header, header_fields, /,/)
+        for (i = 1; i <= NF; i++) {
+            if (!col_all_na[i]) {
+                cols_to_keep[i] = 1
+            }
+        }
+
+        # Print header (only keeping non-NA columns)
+        first_field = 1
+        for (i = 1; i <= NF; i++) {
+            if (cols_to_keep[i]) {
+                if (!first_field) {
+                    printf "%s", OFS
+                }
+                printf "%s", header_fields[i]
+                first_field = 0
+            }
+        }
+        printf "\n"
+
+        # Print each row (only keeping non-NA columns)
+        for (j = 2; j <= NR; j++) {
+            split(rows[j], row_fields, /,/)
+            first_field = 1
+            for (i = 1; i <= NF; i++) {
+                if (cols_to_keep[i]) {
+                    if (!first_field) {
+                        printf "%s", OFS
+                    }
+                    printf "%s", row_fields[i]
+                    first_field = 0
+                }
+            }
+            printf "\n"
+        }
+    }' <<<"${csv_data}"
+}
+
 _libBIDSsh_parse_filename() {
   # Breakup the BIDS filename components and return a key-value pair array
   # Along with a key ordering array
