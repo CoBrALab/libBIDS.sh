@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-[[ "${BASH_VERSINFO:-0}" -ge 4 ]] || (echo "Error: bash >= 4.0 is required for this script" >&2 && exit 1)
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3) )); then
+  echo "Error: bash >= 4.3 is required for this script" >&2
+  exit 1
+fi
 
 set -euo pipefail
 

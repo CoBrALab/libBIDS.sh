@@ -15,7 +15,7 @@ the parser that the BIDS spec does not allow.
 
 ## Dependencies
 
-libBIDS.sh uses POSIX as well as bash functionality. The minimum version of bash supported is 4.0.
+libBIDS.sh uses POSIX as well as bash functionality. The minimum version of bash supported is 4.3.
 
 Sorry Mac users, you'll need to upgrade the 18-year-old bash version (3.2, 2007) that Apple ships in OSX.
 https://apple.stackexchange.com/questions/193411/update-bash-to-version-4-0-on-osx
