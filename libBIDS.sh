@@ -482,16 +482,32 @@ libBIDS_csv_iterator() {
   # while libBIDS_csv_iterator "${csv_data}" row_data [sorting_column]; do
   #   declare -p row_data #Show the contents of row_data key-value pairs
   # done
+  # Options:
+  #   -r : reverse the sort order
 
   local csv_var=$1    # Name of the variable containing CSV data
   local -n arr_ref=$2 # Name reference to the associative array
-  shift 2             # Remaining arguments are sort columns
+  shift 2             # Remaining arguments are sort columns or options
 
-  # Store sort columns
-  local sort_columns=("$@")
+  # Handle options
+  local reverse_sort=false
+  local sort_columns=()
+  for arg in "$@"; do
+    if [[ "$arg" == "-r" ]]; then
+      reverse_sort=true
+    else
+      sort_columns+=("$arg")
+    fi
+  done
 
   # Read all lines into an array
   IFS=$'\n' read -d '' -r -a lines <<<"${csv_var}" || true
+
+  # Handle empty input
+  if [[ ${#lines[@]} -eq 0 ]]; then
+    arr_ref=()
+    return 1
+  fi
 
   # Extract header and data lines
   local header="${lines[0]}"
@@ -518,21 +534,52 @@ libBIDS_csv_iterator() {
       fi
     done
 
-    # Sort the data lines
-    IFS=$'\n' sorted_data=($(
-      printf "%s\n" "${data_lines[@]}" |
-        sort --version-sort -t, "${sort_keys[@]}"
-    )) || true
+    # Add reverse flag if needed
+    local sort_reverse_flag=()
+    if [[ "$reverse_sort" == true ]]; then
+      sort_reverse_flag=("-r")
+    fi
+
+    # Sort the data lines (handle empty case)
+    if [[ ${#data_lines[@]} -gt 0 ]]; then
+      IFS=$'\n' sorted_data=($(
+        printf "%s\n" "${data_lines[@]}" |
+          sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+      )) || true
+    else
+      sorted_data=()
+    fi
   else
-    # No sorting needed
-    sorted_data=("${data_lines[@]}")
+    # No specific sort columns provided, sort by all columns left to right
+    IFS=',' read -r -a headers <<<"${header}"
+    local sort_keys=()
+    for i in "${!headers[@]}"; do
+      local idx=$((i + 1)) # sort uses 1-based indexing
+      sort_keys+=("-k$idx,$idx")
+    done
+
+    # Add reverse flag if needed
+    local sort_reverse_flag=()
+    if [[ "$reverse_sort" == true ]]; then
+      sort_reverse_flag=("-r")
+    fi
+
+    # Sort the data lines (handle empty case)
+    if [[ ${#data_lines[@]} -gt 0 ]]; then
+      IFS=$'\n' sorted_data=($(
+        printf "%s\n" "${data_lines[@]}" |
+          sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+      )) || true
+    else
+      sorted_data=()
+    fi
   fi
 
   # Use a line counter local to this function call
   local current_line=${arr_ref[__current_line]:-0}
 
-  # If we're at the end, return failure (for while loop exit)
-  if ((current_line >= ${#sorted_data[@]} + 1)); then # +1 for header
+  # If we're at the end or have no data, return failure
+  if ((current_line >= ${#sorted_data[@]} + 1)) || [[ ${#sorted_data[@]} -eq 0 ]]; then
     # Clear the array before returning
     arr_ref=()
     return 1
@@ -547,13 +594,18 @@ libBIDS_csv_iterator() {
     ((current_line++))
   fi
 
-  # Read the current data line (note we use sorted_data which is 0-based)
-  if ((current_line > 0 && current_line <= ${#sorted_data[@]} + 1)); then
-    IFS=',' read -r -a values <<<"${sorted_data[current_line - 1]}"
+  # Read the current data line (with bounds checking)
+  if ((current_line > 0 && current_line <= ${#sorted_data[@]})); then
+    local line_content="${sorted_data[current_line - 1]}"
+    IFS=',' read -r -a values <<<"${line_content}"
 
     # Store key-value pairs in the array
     for i in "${!headers[@]}"; do
-      arr_ref["${headers[i]}"]="${values[i]}"
+      if [[ -v "values[i]" ]]; then
+        arr_ref["${headers[i]}"]="${values[i]}"
+      else
+        arr_ref["${headers[i]}"]=""
+      fi
     done
   fi
 
