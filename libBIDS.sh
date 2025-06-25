@@ -564,6 +564,25 @@ libBIDS_csv_iterator() {
   return 0
 }
 
+libBIDSsh_json_to_associative_array() {
+    local json_file="$1"
+    declare -n arr_ref="$2"  # nameref to the associative array
+
+    # Use jq to process the JSON file and output key-value pairs with type prefixes
+    while IFS="=" read -r key value; do
+        # Remove quotes from key (jq outputs keys with quotes)
+        key="${key%\"}"
+        key="${key#\"}"
+        arr_ref["$key"]="$value"
+    done < <(jq -r 'to_entries[] |
+        "\(.key)=\(
+            if .value|type == "array" then "array:" + (.value|join(","))
+            elif .value|type == "object" then "object:" + (.value|tostring)
+            else (.value|type) + ":" + (.value|tostring)
+            end
+        )"' "$json_file")
+}
+
 # bash "if __main__" implementation
 if ! (return 0 2>/dev/null); then
   if [[ $# -eq 0 ]]; then
