@@ -8,15 +8,15 @@ fi
 set -euo pipefail
 
 libBIDSsh_csv_filter() {
-  # libBIDSsh_filter
-  # function to filter csv-structured BIDS data, returning specified columns and optionally filtering by row content
-  # Uses awk to perform filtering, see `man grep` for details on extended regex specification
-  # All filtering are combined with AND
-  # Usage:
-  # libBIDSsh_csv_filter "${csv_data}" [-c column,column...] [-r filter] .. [-r filter] [-d column,column...]
-  #   -c, --columns <list>           Comma-separated list of column indices or column names
-  #   -r, --row-filter <col:pattern> Subset rows where column matches exact string or regex pattern
-  #   -d, --drop-na <list>           Comma-separated list of columns to check for NA values (drops rows where any specified column equals "NA")
+  # Filter CSV-structured BIDS data, returning specified columns and optionally filtering rows
+  # Usage: libBIDSsh_csv_filter "${csv_data}" [OPTIONS]
+  # Options:
+  #   -c, --columns <list>      Comma-separated list of column indices or names to keep
+  #   -r, --row-filter <col:pattern> Filter rows where column matches exact string or regex
+  #   -d, --drop-na <list>      Comma-separated list of columns to check for NA values
+  # Returns: Filtered CSV data through stdout
+  # Example:
+  #   filtered=$(libBIDSsh_csv_filter "$data" -c "sub,ses" -r "task:rest" -d "run")
   local csv_data="$1"
   shift
 
@@ -142,6 +142,11 @@ libBIDSsh_csv_filter() {
 }
 
 libBIDSsh_drop_na_columns() {
+  # Remove columns from CSV data that contain only NA values
+  # Usage: libBIDSsh_drop_na_columns "${csv_data}"
+  # Returns: CSV data with NA-only columns removed through stdout
+  # Example:
+  #   cleaned=$(libBIDSsh_drop_na_columns "$data")
   local csv_data="$1"
   awk -F, '
     BEGIN {OFS=","}
@@ -204,9 +209,12 @@ libBIDSsh_drop_na_columns() {
 }
 
 _libBIDSsh_parse_filename() {
-  # Breakup the BIDS filename components and return a key-value pair array
-  # Along with a key ordering array
-  # Internal function
+  # Internal function to parse BIDS filenames into components
+  # Usage: _libBIDSsh_parse_filename "${path}" array_name
+  # Populates associative array with BIDS components (entities, suffix, extension, etc.)
+  # Example:
+  #   declare -A file_info
+  #   _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
   local path="$1"
   local -n arr="$2" # nameref to the associative array
 
@@ -256,6 +264,11 @@ _libBIDSsh_parse_filename() {
 }
 
 libBIDSsh_extension_json_rows_to_column_json_path() {
+  # Convert JSON file rows into a json_path column in the CSV data
+  # Usage: libBIDSsh_extension_json_rows_to_column_json_path "${csv_data}"
+  # Returns: CSV data with json_path column added through stdout
+  # Example:
+  #   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$data")
   local csv_data="$1"
 
   awk -F',' '
@@ -332,7 +345,11 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
 }
 
 libBIDSsh_parse_bids_to_csv() {
-
+  # Parse a BIDS directory structure into CSV format
+  # Usage: libBIDSsh_parse_bids_to_csv "/path/to/bids/dataset"
+  # Returns: CSV data through stdout with columns for each BIDS entity
+  # Example:
+  #   bids_csv=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
   local bidspath=$1
 
   # Build the pattern piece by piece
@@ -421,12 +438,17 @@ libBIDSsh_parse_bids_to_csv() {
 }
 
 libBIDSsh_csv_column_to_array() {
-  # function to convert a column from a libBIDSsh csv data structure to an array
-  # optionally return only unique entries and/or exclude NA
-  # Usage example:
-  # declare -a my_array
-  # libBIDSsh_csv_column_to_array "${bids_csv_data}" "column_name" my_array [unique] [exclude_NA]
-
+  # Extract a column from CSV data into a bash array
+  # Usage: libBIDSsh_csv_column_to_array "${csv_data}" "column_name" array_ref [unique] [exclude_NA]
+  # Arguments:
+  #   csv_data: CSV-formatted string
+  #   column_name: Name or index of column to extract
+  #   array_ref: Name of array variable to populate (declare -a)
+  #   unique: (optional) "true" to return only unique values (default: true)
+  #   exclude_NA: (optional) "true" to exclude NA values (default: true)
+  # Example:
+  #   declare -a subjects
+  #   libBIDSsh_csv_column_to_array "$data" "sub" subjects true true
   local csv_data="$1"
   local column="$2"
   local -n array_ref="$3" # nameref to the array variable
@@ -483,18 +505,19 @@ libBIDSsh_csv_column_to_array() {
 }
 
 libBIDS_csv_iterator() {
-  # function which takes in libBIDS.sh CSV and returns one row as key-value pairs
-  # optionally sorting the CSV first according to one or more columns
-  # do not change sorting between calls, only basic line-number state is kept
-  # libBIDS_csv_iterator "${csv_data}" row_data [sort_column_name] ... [sort_column_name]
-  # Usage example:
-  # declare -A row_data
-  # while libBIDS_csv_iterator "${csv_data}" row_data [sorting_column]; do
-  #   declare -p row_data #Show the contents of row_data key-value pairs
-  # done
-  # Options:
-  #   -r : reverse the sort order
-
+  # Iterate through CSV data row by row with optional sorting
+  # Usage: libBIDS_csv_iterator "${csv_data}" array_ref [sort_columns...] [-r]
+  # Arguments:
+  #   csv_data: CSV-formatted string
+  #   array_ref: Name of associative array to populate with each row's data
+  #   sort_columns: (optional) Columns to sort by (multiple allowed)
+  #   -r: (optional) Reverse sort order
+  # Returns: 0 for success (more rows), 1 when done
+  # Example:
+  #   declare -A row
+  #   while libBIDS_csv_iterator "$data" row "sub" "ses" "-r"; do
+  #     echo "Processing subject ${row[sub]} session ${row[ses]}"
+  #   done
   local csv_var=$1    # Name of the variable containing CSV data
   local -n arr_ref=$2 # Name reference to the associative array
   shift 2             # Remaining arguments are sort columns or options
@@ -627,6 +650,14 @@ libBIDS_csv_iterator() {
 }
 
 libBIDSsh_json_to_associative_array() {
+  # Parse a JSON file into a bash associative array
+  # Usage: libBIDSsh_json_to_associative_array "file.json" array_ref
+  # Arguments:
+  #   file.json: Path to JSON file
+  #   array_ref: Name of associative array to populate (declare -A)
+  # Example:
+  #   declare -A json_data
+  #   libBIDSsh_json_to_associative_array "file.json" json_data
   local json_file="$1"
   declare -n arr_ref="$2" # nameref to the associative array
 
