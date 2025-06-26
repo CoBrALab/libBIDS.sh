@@ -1,176 +1,295 @@
 # libBIDS.sh
 
-A bash library used to parse BIDS datasets into a data structure suitable for use in shell pipelines.
+A Bash library for parsing and processing BIDS datasets into CSV-like structures,
+enabling flexible data filtering, extraction, and iteration within shell scripts.
 
-Parses a BIDS dataset by:
+Pattern matching is permissive with respect to BIDS spec, it may match some files
+which do not meet validation requirements.
 
-1. Using bash `extglob` features to find all BIDS-compliant filenames
-2. Parsing out the potential subfields of the BIDS file naming scheme into a key-value pairs
-3. Constructs a "database" CSV-structured representation of the dataset
-4. Provides library functions to subset the database based on the fields
-5. Provides functions to iterate over the dataset
+## Features
 
-Implementation is "permissive" with regards to the BIDS spec, some combinations of optional fields are allowed in
-the parser that the BIDS spec does not allow.
+- Converts BIDS datasets into a flat CSV format
+- Extracts key BIDS entities from filenames
+- Provides filtering, column selection, and row operations
+- Allows iteration over rows with associative arrays
+- Handles JSON sidecar files and metadata
+- Designed for shell scripting in pipelines and automation
 
-## Dependencies
+## Requirements
 
-libBIDS.sh uses POSIX as well as bash functionality. The minimum version of bash supported is 4.3.
+- **Bash version:** ≥ 4.3
+  (Due to associative arrays, `readarray`, and `declare -n` usage)
 
-Sorry Mac users, you'll need to upgrade the 18-year-old bash version (3.2, 2007) that Apple ships in OSX.
-https://apple.stackexchange.com/questions/193411/update-bash-to-version-4-0-on-osx
+macOS users: Apple's default Bash (3.2) is too old. You must upgrade to ≥ 4.3.
+
+See: https://apple.stackexchange.com/questions/193411/update-bash-to-version-4-0-on-osx
 
 ## Usage
 
-libBIDS.sh has two use cases:
+### Sourcing the Library
 
-1. `source libBIDS.sh` in your bash scripts to provide the functions for parsing BIDS data structures
-2. Run `libBIDS.sh /path/to/bids/dataset` to output a CSV-formatted representation of the BIDS dataset
+Include the library in your script:
 
-## Available Functions
-
-### Core Dataset Parsing
-
-#### `libBIDSsh_parse_bids_to_csv`
-Parses a BIDS dataset and returns a CSV representation with columns for all BIDS entities.
-
-**Usage:**
 ```bash
-csv_data=$(libBIDSsh_parse_bids_to_csv "/path/to/bids/dataset")
+source libBIDS.sh
+```
+
+### Command-Line Execution
+
+Run directly to dump dataset as CSV:
+
+```bash
+./libBIDS.sh /path/to/bids
+```
+
+## Core Functions
+
+### `libBIDSsh_parse_bids_to_csv`
+
+Parses a directory tree, identifies BIDS files, extracts BIDS entities, and outputs CSV.
+
+```bash
+csv_data=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
 ```
 
 **Output columns:**
-- `sub`, `ses`, `task`, `acq`, `ce`, `rec`, `dir`, `run`, `recording`, `mod`, `echo`, `part`, `chunk`
-- `suffix`, `extension`, `type`, `derivatives`, `filename`, `path`
 
-### Data Filtering and Subsetting
+- `derivatives`: Pipeline name if in derivatives folder
+- `data_type`: BIDS data type (anat, func, dwi, etc.)
+- BIDS entities: `subject`, `session`, `sample`, `task`, `acquisition`, etc.
+- `suffix`: File suffix (bold, T1w, dwi, etc.)
+- `extension`: File extension
+- `path`: Full file path
 
-#### `libBIDSsh_csv_filter`
-Filters CSV-structured BIDS data, returning specified columns and optionally filtering by row content.
+## Filtering and Subsetting
 
-**Usage:**
+### `libBIDSsh_csv_filter`
+
+Filters CSV data by columns, values, regex, and missing data.
+
 ```bash
-libBIDSsh_csv_filter "${csv_data}" [options]
+libBIDSsh_csv_filter "${csv_data}" [OPTIONS]
 ```
 
 **Options:**
-- `-c, --columns <list>`: Comma-separated list of column indices or column names to keep
-- `-r, --row-filter <col:pattern>`: Filter rows where column matches exact string or regex pattern (multiple filters combined with AND)
-- `-d, --drop-na <list>`: Drop rows where any of the specified columns contain "NA"
+
+- `-c, --columns <col1,col2,...>`: Select columns by name or index
+- `-r, --row-filter <col:pattern>`: Keep rows matching value/regex (AND logic for multiple filters)
+- `-d, --drop-na <col1,col2,...>`: Drop rows where listed columns are "NA"
 
 **Examples:**
+
 ```bash
-# Get only subject and task columns
-filtered=$(libBIDSsh_csv_filter "${csv_data}" -c "sub,task")
+# Keep only subject and task columns
+libBIDSsh_csv_filter "$csv_data" -c "sub,task"
 
-# Filter for specific task and run
-filtered=$(libBIDSsh_csv_filter "${csv_data}" -r "task:rest" -r "run:1")
+# Filter for resting-state tasks
+libBIDSsh_csv_filter "$csv_data" -r "task:rest"
 
-# Remove rows with missing session information
-filtered=$(libBIDSsh_csv_filter "${csv_data}" -d "ses")
+# Multiple filters: rest task AND drop missing sessions
+libBIDSsh_csv_filter "$csv_data" -r "task:rest" -d "ses"
 
-# Combine multiple operations
-filtered=$(libBIDSsh_csv_filter "${csv_data}" -c "sub,ses,task" -r "task:rest" -d "ses")
+# Complex filtering with regex
+libBIDSsh_csv_filter "$csv_data" -r "task:(rest|motor)" -r "run:[1-3]"
 ```
 
-### Data Extraction and Conversion
+### `libBIDSsh_drop_na_columns`
 
-#### `libBIDSsh_csv_column_to_array`
-Converts a column from CSV data to a bash array, with options for uniqueness and NA handling.
+Removes columns that contain only NA values across all rows.
 
-**Usage:**
 ```bash
-declare -a my_array
-libBIDSsh_csv_column_to_array "${csv_data}" "column_name" my_array [unique] [exclude_NA]
+cleaned_csv=$(libBIDSsh_drop_na_columns "$csv_data")
 ```
-
-**Parameters:**
-- `csv_data`: The CSV data string
-- `column_name`: Name or index of the column to extract
-- `array_ref`: Name of the array variable to populate
-- `unique`: (optional, default: true) Remove duplicate entries
-- `exclude_NA`: (optional, default: true) Exclude "NA" values
 
 **Example:**
+
+```bash
+# Remove empty columns from dataset
+csv_data=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
+cleaned_csv=$(libBIDSsh_drop_na_columns "$csv_data")
+```
+
+## JSON Processing
+
+### `libBIDSsh_extension_json_rows_to_column_json_path`
+
+Processes CSV data to add a `json_path` column that links data files to their JSON sidecars.
+
+```bash
+updated_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+```
+
+**Behavior:**
+
+- Matches JSON files to corresponding data files based on BIDS entities
+- Drops JSON rows that have matching data files
+- Keeps unmatched JSON files with their path in `json_path`
+- Adds `NA` for data files without JSON sidecars
+
+**Example:**
+
+```bash
+csv_data=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
+csv_with_json=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+```
+
+### `libBIDSsh_json_to_associative_array`
+
+Parses a JSON file into a bash associative array with type information.
+
+```bash
+declare -A json_data
+libBIDSsh_json_to_associative_array "file.json" json_data
+```
+
+**Value format:**
+- `type:value` for primitives (e.g., `string:hello`, `number:42`)
+- `array:item1,item2,item3` for arrays
+- `object:{json_string}` for nested objects
+
+**Example:**
+
+```bash
+declare -A sidecar
+libBIDSsh_json_to_associative_array "sub-01_task-rest_bold.json" sidecar
+echo "TR: ${sidecar[RepetitionTime]}"  # Output: number:2.0
+```
+
+## Column Extraction
+
+### `libBIDSsh_csv_column_to_array`
+
+Extracts a column as a Bash array with deduplication and NA filtering.
+
+```bash
+libBIDSsh_csv_column_to_array "$csv_data" "column" array_var [unique] [exclude_NA]
+```
+
+**Arguments:**
+
+- `csv_data`: CSV-formatted string
+- `column`: Column name or index
+- `array_var`: Name of array variable to populate
+- `unique`: "true" (default) to return only unique values
+- `exclude_NA`: "true" (default) to exclude NA values
+
+**Example:**
+
 ```bash
 declare -a subjects
-libBIDSsh_csv_column_to_array "${csv_data}" "sub" subjects true true
-echo "Found subjects: ${subjects[@]}"
+libBIDSsh_csv_column_to_array "$csv_data" "sub" subjects true true
+echo "Unique subjects: ${subjects[@]}"
+
+declare -a all_runs
+libBIDSsh_csv_column_to_array "$csv_data" "run" all_runs false false
+echo "All runs (including duplicates and NA): ${all_runs[@]}"
 ```
 
-### Data Iteration
+## Row Iteration
 
-#### `libBIDS_csv_iterator`
-Iterates through CSV data row by row, returning each row as key-value pairs in an associative array. Supports optional sorting.
+### `libBIDS_csv_iterator`
 
-**Usage:**
+Iterates CSV rows, exposes fields in an associative array with optional sorting.
+
 ```bash
-declare -A row_data
-while libBIDS_csv_iterator "${csv_data}" row_data [sort_column1] [sort_column2] ...; do
-    # Process each row
-    echo "Subject: ${row_data[sub]}, Task: ${row_data[task]}"
+while libBIDS_csv_iterator "$csv_data" row_var [sort_col1] [sort_col2] [-r]; do
+  # Process row
 done
 ```
 
-**Parameters:**
-- `csv_data`: The CSV data string
-- `row_data`: Name of associative array to populate with row data
-- `sort_columns`: (optional) Column names to sort by before iteration
+**Arguments:**
+- `csv_data`: CSV data string
+- `row_var`: Name of associative array to populate with each row
+- `sort_columns`: Optional column names to sort by
+- `-r`: Optional reverse sort flag
 
 **Example:**
+
 ```bash
 declare -A row
-while libBIDS_csv_iterator "${csv_data}" row "sub" "ses" "run"; do
-    echo "Processing: ${row[filename]}"
-    echo "  Subject: ${row[sub]}"
-    echo "  Session: ${row[ses]}"
-    echo "  Task: ${row[task]}"
+while libBIDS_csv_iterator "$csv_data" row "sub" "ses" "run"; do
+  echo "Processing: ${row[sub]} ${row[ses]} ${row[run]}: ${row[path]}"
 done
-```
 
-## Complete Example
+## Internal Functions
+
+### `_libBIDSsh_parse_filename`
+
+Internal function that parses BIDS filenames into component entities.
 
 ```bash
-#!/bin/bash
+declare -A file_info
+_libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
+```
+
+**Populated fields:**
+
+- Individual BIDS entities (sub, ses, task, etc.)
+- `suffix`: File suffix
+- `extension`: File extension
+- `data_type`: Inferred data type
+- `derivatives`: Pipeline name if applicable
+- `path`: Full path
+- `_key_order`: Order of keys for iteration
+
+## Complete Examples
+
+### Basic Dataset Processing
+
+```bash
+#!/usr/bin/env bash
 source libBIDS.sh
 
-# Parse BIDS dataset
-bids_path="/path/to/bids/dataset"
-csv_data=$(libBIDSsh_parse_bids_to_csv "${bids_path}")
+bids_path="/path/to/bids"
+csv_data=$(libBIDSsh_parse_bids_to_csv "$bids_path")
 
-# Get all unique subjects
+# Extract unique subjects
 declare -a subjects
-libBIDSsh_csv_column_to_array "${csv_data}" "sub" subjects
+libBIDSsh_csv_column_to_array "$csv_data" "sub" subjects true true
+echo "Found subjects: ${subjects[*]}"
 
-echo "Found ${#subjects[@]} subjects: ${subjects[*]}"
+# Clean up empty columns
+csv_data=$(libBIDSsh_drop_na_columns "$csv_data")
 
-# Filter for functional data only
-func_data=$(libBIDSsh_csv_filter "${csv_data}" -r "type:func" -c "sub,ses,task,run,filename")
+# Add JSON sidecar information
+csv_data=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+```
 
-# Iterate through functional files, sorted by subject and session
+### Functional Data Processing
+
+```bash
+#!/usr/bin/env bash
+source libBIDS.sh
+
+bids_path="/path/to/bids"
+csv_data=$(libBIDSsh_parse_bids_to_csv "$bids_path")
+
+# Filter for functional BOLD data with JSON sidecars
+func_csv=$(libBIDSsh_csv_filter "$csv_data" \
+  -r "data_type:func" \
+  -r "suffix:bold")
+
+# Add JSON paths
+func_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$func_csv")
+
+# Process each file with its JSON metadata
 declare -A row
-while libBIDS_csv_iterator "${func_data}" row "sub" "ses"; do
-    echo "Processing: ${row[filename]}"
-    # Your processing logic here
+while libBIDS_csv_iterator "$func_csv" row "sub" "ses" "run"; do
+  echo "Processing: ${row[path]}"
+
+  if [[ "${row[json_path]}" != "NA" ]]; then
+    declare -A json_data
+    libBIDSsh_json_to_associative_array "${row[json_path]}" json_data
+    echo "  TR: ${json_data[RepetitionTime]}"
+    echo "  Task: ${json_data[TaskName]}"
+  fi
 done
 ```
 
-## Supported BIDS Entities
+## Notes
 
-The parser recognizes the following BIDS entities and file types:
-
-**Entities:** sub, ses, task, acq, ce, rec, dir, run, recording, mod, echo, part, chunk
-
-**Anatomical suffixes:** FLAIR, PDT2, PDw, T1w, T2starw, T2w, UNIT1, angio, inplaneT1, inplaneT2
-
-**Parametric maps:** Chimap, M0map, MTRmap, MTVmap, MTsat, MWFmap, PDmap, R1map, R2map, R2starmap, RB1map, S0map, T1map, T1rho, T2map, T2starmap, TB1map
-
-**Functional:** bold, cbv, phase, sbref, events, physio, stim
-
-**Diffusion:** dwi, sbref
-
-**Perfusion:** asl, m0scan, aslcontext
-
-**Field maps:** magnitude1, magnitude2, phasediff, phase1, phase2, fieldmap, magnitude, epi
-
-**File extensions:** .nii, .json, .tsv, .bval, .bvec (with optional .gz compression)
+- All functions handle CSV data as strings, not files
+- NA values are used for missing BIDS entities
+- Pattern matching is permissive and may match non-BIDS-compliant files
+- JSON processing requires `jq` to be installed
+- Sort operations use version sort for natural ordering of numbers
