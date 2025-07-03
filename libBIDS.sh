@@ -351,7 +351,7 @@ _libBIDSsh_load_custom_entities() {
   #   - name: entity short name
   #   - display_name: entity display name for CSV headers
   #   - pattern: bash glob pattern for matching
-  #   - description: optional description
+
   
   local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local plugin_dir="${script_dir}/custom"
@@ -389,12 +389,6 @@ _libBIDSsh_load_custom_entities() {
     fi
   done
   
-  # Still support .sh files for backward compatibility
-  for plugin_file in "$plugin_dir"/*.sh; do
-    if [[ -f "$plugin_file" ]]; then
-      source "$plugin_file"
-    fi
-  done
 }
 
 libBIDSsh_parse_bids_to_csv() {
