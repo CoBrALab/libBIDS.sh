@@ -286,6 +286,32 @@ while libBIDS_csv_iterator "$func_csv" row "sub" "ses" "run"; do
 done
 ```
 
+## Customization
+
+### Adding non-BIDS entities 
+
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory:
+
+```json
+{
+  "entities": [
+    {
+      "name": "foo",
+      "display_name": "fooval",
+      "pattern": "*(_foo-+([a-zA-Z0-9]))"
+    },
+    {
+      "name": "bar",
+      "display_name": "baridx",
+      "pattern": "*(_bar-+([0-9]))"
+    }
+    ...
+  ]
+}
+```
+
+To see an example, rename the template file from `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
+
 ## Notes
 
 - All functions handle CSV data as strings, not files

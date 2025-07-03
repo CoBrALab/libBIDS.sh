@@ -344,6 +344,59 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
   ' <<<"$csv_data"
 }
 
+_libBIDSsh_load_custom_entities() {
+  # Load custom entities from JSON configuration files
+  # JSON files should be placed in ./custom directory
+  # Each JSON file should contain an "entities" array with objects having:
+  #   - name: entity short name
+  #   - display_name: entity display name for CSV headers
+  #   - pattern: bash glob pattern for matching
+  #   - description: optional description
+  
+  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local plugin_dir="${script_dir}/custom"
+  
+  # Initialize global arrays if not already defined
+  if [[ -z "${CUSTOM_ENTITIES+x}" ]]; then
+    declare -gA CUSTOM_ENTITIES
+  fi
+  if [[ -z "${CUSTOM_ENTITY_NAMES+x}" ]]; then
+    declare -ga CUSTOM_ENTITY_NAMES
+  fi
+  if [[ -z "${CUSTOM_ENTITY_DISPLAY_NAMES+x}" ]]; then
+    declare -ga CUSTOM_ENTITY_DISPLAY_NAMES
+  fi
+  
+  if [[ ! -d "$plugin_dir" ]]; then
+    return 0
+  fi
+  
+  # Load all .json files in the plugin directory
+  for json_file in "$plugin_dir"/*.json; do
+    if [[ -f "$json_file" ]]; then
+      # Parse JSON and extract entity definitions
+      while IFS= read -r line; do
+        local name=$(echo "$line" | cut -d'|' -f1)
+        local display_name=$(echo "$line" | cut -d'|' -f2)
+        local pattern=$(echo "$line" | cut -d'|' -f3)
+        
+        if [[ -n "$name" && -n "$display_name" && -n "$pattern" ]]; then
+          CUSTOM_ENTITIES["$name"]="$pattern"
+          CUSTOM_ENTITY_NAMES+=("$name")
+          CUSTOM_ENTITY_DISPLAY_NAMES+=("$display_name")
+        fi
+      done < <(jq -r '.entities[] | "\(.name)|\(.display_name)|\(.pattern)"' "$json_file" 2>/dev/null)
+    fi
+  done
+  
+  # Still support .sh files for backward compatibility
+  for plugin_file in "$plugin_dir"/*.sh; do
+    if [[ -f "$plugin_file" ]]; then
+      source "$plugin_file"
+    fi
+  done
+}
+
 libBIDSsh_parse_bids_to_csv() {
   # Parse a BIDS directory structure into CSV format
   # Usage: libBIDSsh_parse_bids_to_csv "/path/to/bids/dataset"
@@ -355,6 +408,9 @@ libBIDSsh_parse_bids_to_csv() {
   # Build the pattern piece by piece
   local base_pattern="*"
 
+  # Load custom entities from plugins
+  _libBIDSsh_load_custom_entities
+  
   # Entities components
   # Extracted from schema with generate_entity_patterns.sh
   local entities=(
@@ -391,6 +447,11 @@ libBIDSsh_parse_bids_to_csv() {
     "*(_desc-+([a-zA-Z0-9]))"
   )
 
+  # Add custom entities from plugins
+  for entity_pattern in "${CUSTOM_ENTITIES[@]}"; do
+    entities+=("$entity_pattern")
+  done
+
   # Suffixes from schema.json
   # jq -r .objects.suffixes.[].value schema.json | paste -s -d'|'
   suffixes+="_@(2PE|BF|Chimap|CARS|CONF|DIC|DF|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|coordsystem|defacemask|descriptions|dseg|dwi|eeg|electrodes|epi|events|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|probseg|sbref|scans|sessions|stim|svs|uCT|unloc)"
@@ -421,6 +482,15 @@ libBIDSsh_parse_bids_to_csv() {
   # Order of entities from generate_entity_patterns.sh
   entities_displayname_order="subject,session,sample,task,tracksys,acquisition,nucleus,volume,ceagent,tracer,stain,reconstruction,direction,run,modality,echo,flip,inversion,mtransfer,part,processing,hemisphere,space,split,recording,chunk,segmentation,resolution,density,label,description"
   entities_order="sub ses sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk seg res den label desc"
+
+  # Add custom entities to ordering
+  for entity_name in "${CUSTOM_ENTITY_NAMES[@]}"; do
+    entities_order+=" $entity_name"
+  done
+  
+  for entity_display in "${CUSTOM_ENTITY_DISPLAY_NAMES[@]}"; do
+    entities_displayname_order+=",$entity_display"
+  done
 
   echo "derivatives,data_type,${entities_displayname_order},suffix,extension,path"
   for file in "${files[@]}"; do
