@@ -355,6 +355,10 @@ _libBIDSsh_load_custom_entities() {
   
   local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local plugin_dir="${script_dir}/custom"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for custom entity support" >&2
+    return 1
+  fi
   
   # Initialize global arrays if not already defined
   if [[ -z "${CUSTOM_ENTITIES+x}" ]]; then
