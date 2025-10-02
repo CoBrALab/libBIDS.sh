@@ -371,24 +371,23 @@ _libBIDSsh_load_custom_entities() {
     return 0
   fi
   
-  # Load all .json files in the plugin directory
+  shopt -s nullglob
   for json_file in "$plugin_dir"/*.json; do
     if [[ -f "$json_file" ]]; then
       # Parse JSON and extract entity definitions
-      while IFS= read -r line; do
-        local name=$(echo "$line" | cut -d'|' -f1)
-        local display_name=$(echo "$line" | cut -d'|' -f2)
-        local pattern=$(echo "$line" | cut -d'|' -f3)
-        
+      while IFS='|' read -r name display_name pattern; do
         if [[ -n "$name" && -n "$display_name" && -n "$pattern" ]]; then
           CUSTOM_ENTITIES["$name"]="$pattern"
           CUSTOM_ENTITY_NAMES+=("$name")
           CUSTOM_ENTITY_DISPLAY_NAMES+=("$display_name")
         fi
-      done < <(jq -r '.entities[] | "\(.name)|\(.display_name)|\(.pattern)"' "$json_file" 2>/dev/null)
+      done < <(
+        jq -r '.entities[] | "\(.name)|\(.display_name)|\(.pattern)"' \
+          "$json_file" 2>/dev/null
+      )
     fi
   done
-  
+  shopt -u nullglob
 }
 
 libBIDSsh_parse_bids_to_csv() {
