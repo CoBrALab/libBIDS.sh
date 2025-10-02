@@ -364,12 +364,15 @@ _libBIDSsh_load_custom_entities() {
   if [[ -z "${CUSTOM_ENTITIES+x}" ]]; then
     declare -gA CUSTOM_ENTITIES
   fi
+  CUSTOM_ENTITIES=()
   if [[ -z "${CUSTOM_ENTITY_NAMES+x}" ]]; then
     declare -ga CUSTOM_ENTITY_NAMES
   fi
+  CUSTOM_ENTITY_NAMES=()
   if [[ -z "${CUSTOM_ENTITY_DISPLAY_NAMES+x}" ]]; then
     declare -ga CUSTOM_ENTITY_DISPLAY_NAMES
   fi
+  CUSTOM_ENTITY_DISPLAY_NAMES=()
   
   if [[ ! -d "$plugin_dir" ]]; then
     return 0
