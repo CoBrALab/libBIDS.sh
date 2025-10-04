@@ -379,7 +379,20 @@ _libBIDSsh_load_custom_entities() {
   fi
   
   shopt -s nullglob
-  for json_file in "$plugin_dir"/*.json; do
+  local json_files=("$plugin_dir"/*.json)
+  shopt -u nullglob
+
+  if ((${#json_files[@]} == 0)); then
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for custom entity support" >&2
+    return 1
+  fi
+
+  shopt -s nullglob
+  for json_file in "${json_files[@]}"; do
     if [[ -f "$json_file" ]]; then
       # Parse JSON and extract entity definitions
       while IFS=';' read -r name display_name pattern; do
