@@ -382,14 +382,14 @@ _libBIDSsh_load_custom_entities() {
   for json_file in "$plugin_dir"/*.json; do
     if [[ -f "$json_file" ]]; then
       # Parse JSON and extract entity definitions
-      while IFS='|' read -r name display_name pattern; do
+      while IFS=';' read -r name display_name pattern; do
         if [[ -n "$name" && -n "$display_name" && -n "$pattern" ]]; then
           CUSTOM_ENTITIES["$name"]="$pattern"
           CUSTOM_ENTITY_NAMES+=("$name")
           CUSTOM_ENTITY_DISPLAY_NAMES+=("$display_name")
         fi
       done < <(
-        jq -r '.entities[] | "\(.name)|\(.display_name)|\(.pattern)"' \
+        jq -r '.entities[] | "\(.name);\(.display_name);\(.pattern)"' \
           "$json_file" 2>/dev/null
       )
     fi
