@@ -230,7 +230,7 @@ _libBIDSsh_parse_filename() {
   arr[extension]="${filename#*.}"
   # Extract from schema
   # jq -r .objects.datatypes.[].value schema.json  | paste -s -d'|'
-  arr[data_type]=$(grep -o -E "(anat|beh|dwi|eeg|fmap|func|ieeg|meg|micr|motion|mrs|perf|pet|nirs)" <<<$(dirname ${path}) | head -1 || echo "NA")
+  arr[data_type]=$(grep -o -E "(anat|beh|dwi|eeg|fmap|func|ieeg|meg|micr|motion|mrs|perf|pet|phenotype|nirs)" <<<$(dirname ${path}) | head -1 || echo "NA")
   arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
@@ -352,14 +352,14 @@ _libBIDSsh_load_custom_entities() {
   #   - display_name: entity display name for CSV headers
   #   - pattern: bash glob pattern for matching
 
-  
+
   local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local plugin_dir="${script_dir}/custom"
   if ! command -v jq >/dev/null 2>&1; then
     echo "Error: jq is required for custom entity support" >&2
     return 1
   fi
-  
+
   # Initialize global arrays if not already defined
   if [[ -z "${CUSTOM_ENTITIES+x}" ]]; then
     declare -gA CUSTOM_ENTITIES
@@ -373,11 +373,11 @@ _libBIDSsh_load_custom_entities() {
     declare -ga CUSTOM_ENTITY_DISPLAY_NAMES
   fi
   CUSTOM_ENTITY_DISPLAY_NAMES=()
-  
+
   if [[ ! -d "$plugin_dir" ]]; then
     return 0
   fi
-  
+
   shopt -s nullglob
   local json_files=("$plugin_dir"/*.json)
   shopt -u nullglob
@@ -423,7 +423,7 @@ libBIDSsh_parse_bids_to_csv() {
 
   # Load custom entities from plugins
   _libBIDSsh_load_custom_entities
-  
+
   # Entities components
   # Extracted from schema with generate_entity_patterns.sh
   local entities=(
@@ -467,12 +467,12 @@ libBIDSsh_parse_bids_to_csv() {
 
   # Suffixes from schema.json
   # jq -r .objects.suffixes.[].value schema.json | paste -s -d'|'
-  suffixes+="_@(2PE|BF|Chimap|CARS|CONF|DIC|DF|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|coordsystem|defacemask|descriptions|dseg|dwi|eeg|electrodes|epi|events|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|probseg|sbref|scans|sessions|stim|svs|uCT|unloc)"
+  local suffixes="_@(2PE|ADC|BF|Chimap|CARS|CONF|DIC|DF|FA|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|colFA|coordsystem|defacemask|descriptions|dseg|dwi|eeg|electrodes|epi|events|expADC|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|probseg|sbref|scans|sessions|stim|svs|trace|uCT|unloc)"
 
   # Allowed extensions
   # jq -r .objects.extensions.[].value schema.json | paste -s -d'|'
   # Stripped the ".*" and directory entries manually
-  local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.dlabel.nii|.edf|.eeg|.fdt|.fif|.jpg|.json|.kdf|.label.gii|.md||.mhd|.mrk|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
+  local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
 
   # Piece together the pattern
   local pattern=${base_pattern}
@@ -500,7 +500,7 @@ libBIDSsh_parse_bids_to_csv() {
   for entity_name in "${CUSTOM_ENTITY_NAMES[@]}"; do
     entities_order+=" $entity_name"
   done
-  
+
   for entity_display in "${CUSTOM_ENTITY_DISPLAY_NAMES[@]}"; do
     entities_displayname_order+=",$entity_display"
   done
