@@ -58,7 +58,7 @@ csv_data=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
 - `data_type`: BIDS data type (anat, func, dwi, etc.)
 - BIDS entities: `subject`, `session`, `sample`, `task`, `acquisition`, etc.
 - `suffix`: File suffix (bold, T1w, dwi, etc.)
-- `extension`: File extension
+- `extension`: File extension, no leading dot (nii.gz, json, etc.)
 - `path`: Full file path
 
 ## Filtering and Subsetting
@@ -86,11 +86,15 @@ libBIDSsh_csv_filter "$csv_data" -c "sub,task"
 # Filter for resting-state tasks
 libBIDSsh_csv_filter "$csv_data" -r "task:rest"
 
+# Filter for NIfTI files
+libBIDSsh_csv_filter "$csv_data" -r "extension:nii.gz"
+
 # Multiple filters: rest task AND drop missing sessions
 libBIDSsh_csv_filter "$csv_data" -r "task:rest" -d "ses"
 
 # Complex filtering with regex
 libBIDSsh_csv_filter "$csv_data" -r "task:(rest|motor)" -r "run:[1-3]"
+
 ```
 
 ### `libBIDSsh_drop_na_columns`
