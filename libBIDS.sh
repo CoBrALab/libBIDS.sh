@@ -418,7 +418,11 @@ libBIDSsh_parse_bids_to_csv() {
   # Returns: CSV data through stdout with columns for each BIDS entity
   # Example:
   #   bids_csv=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
-  local bidspath=$1
+  local bidspath="${1:-}"
+  if [[ ! -d "$bidspath" ]]; then
+    echo "Error: Directory '$bidspath' does not exist" >&2
+    return 1
+  fi
 
   # Build the pattern piece by piece
   local base_pattern="*"
@@ -603,7 +607,11 @@ libBIDS_csv_iterator() {
   #   while libBIDS_csv_iterator "$data" row "sub" "ses" "-r"; do
   #     echo "Processing subject ${row[sub]} session ${row[ses]}"
   #   done
-  local csv_var=$1    # Name of the variable containing CSV data
+  local csv_var="${1:-}"    # Name of the variable containing CSV data
+  if [[ -z "${2:-}" ]]; then
+    echo "Error: Missing array reference argument" >&2
+    return 1
+  fi
   local -n arr_ref=$2 # Name reference to the associative array
   shift 2             # Remaining arguments are sort columns or options
 
@@ -660,10 +668,12 @@ libBIDS_csv_iterator() {
 
     # Sort the data lines (handle empty case)
     if [[ ${#data_lines[@]} -gt 0 ]]; then
+      local old_ifs="${IFS}"
       IFS=$'\n' sorted_data=($(
         printf "%s\n" "${data_lines[@]}" |
           sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
       )) || true
+      IFS="${old_ifs}"
     else
       sorted_data=()
     fi
@@ -684,10 +694,12 @@ libBIDS_csv_iterator() {
 
     # Sort the data lines (handle empty case)
     if [[ ${#data_lines[@]} -gt 0 ]]; then
+      local old_ifs="${IFS}"
       IFS=$'\n' sorted_data=($(
         printf "%s\n" "${data_lines[@]}" |
           sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
       )) || true
+      IFS="${old_ifs}"
     else
       sorted_data=()
     fi
@@ -743,8 +755,18 @@ libBIDSsh_json_to_associative_array() {
   # Example:
   #   declare -A json_data
   #   libBIDSsh_json_to_associative_array "file.json" json_data
-  local json_file="$1"
-  declare -n arr_ref="$2" # nameref to the associative array
+  local json_file="${1:-}"
+  if [[ -z "${2:-}" ]]; then
+    echo "Error: Missing array reference argument" >&2
+    return 1
+  fi
+  local array_name="$2"
+
+  if [[ ! -f "$json_file" ]]; then
+    echo "Error: File '$json_file' does not exist" >&2
+    return 1
+  fi
+  declare -n arr_ref="$array_name" # nameref to the associative array
 
   # Use jq to process the JSON file and output key-value pairs with type prefixes
   while IFS="=" read -r key value; do
