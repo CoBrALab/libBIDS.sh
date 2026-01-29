@@ -107,6 +107,7 @@ libBIDSsh_csv_filter() {
                     } else if (filters[i]["col"] ~ /^[0-9]+$/) {
                         col = filters[i]["col"];
                     } else {
+                        print "Error: Row filter column \"" filters[i]["col"] "\" not found in CSV header" > "/dev/stderr";
                         exit 1;
                     }
 
@@ -123,6 +124,7 @@ libBIDSsh_csv_filter() {
                     } else if (na_cols[i] ~ /^[0-9]+$/) {
                         col = na_cols[i];
                     } else {
+                        print "Error: Drop NA column \"" na_cols[i] "\" not found in CSV header" > "/dev/stderr";
                         exit 1;
                     }
 
