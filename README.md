@@ -1,12 +1,12 @@
 # libBIDS.sh
 
-A Bash library for parsing and processing BIDS datasets into CSV-like structures, enabling flexible data filtering, extraction, and iteration within shell scripts.
+A Bash library for parsing and processing BIDS datasets into TSV (tab-separated values) structures, enabling flexible data filtering, extraction, and iteration within shell scripts.
 
 Pattern matching is permissive with respect to BIDS spec, it may match some files which do not meet validation requirements.
 
 ## Features
 
-- Converts BIDS datasets into a flat CSV format
+- Converts BIDS datasets into a flat TSV format
 - Extracts key BIDS entities from filenames
 - Provides filtering, column selection, and row operations
 - Allows iteration over rows with associative arrays
@@ -34,7 +34,7 @@ source libBIDS.sh
 
 ### Command-Line Execution
 
-Run directly to dump dataset as CSV:
+Run directly to dump dataset as TSV:
 
 ```bash
 ./libBIDS.sh bids-examples/ds001
@@ -42,17 +42,17 @@ Run directly to dump dataset as CSV:
 
 ## Core Functions
 
-### `libBIDSsh_parse_bids_to_csv`
+### `libBIDSsh_parse_bids_to_table`
 
-Parses a directory tree, identifies BIDS files, extracts BIDS entities, and outputs CSV.
+Parses a directory tree, identifies BIDS files, extracts BIDS entities, and outputs TSV.
 
 ```bash
-csv_data=$(libBIDSsh_parse_bids_to_csv "bids-examples/ds001")
+table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 ```
 
 **Output columns:**
 
-The CSV columns use the full BIDS entity names (display names), not the short keys found in filenames.
+The TSV columns use the full BIDS entity names (display names), not the short keys found in filenames.
 
 - `derivatives`: Pipeline name if in derivatives folder
 - `data_type`: BIDS data type (anat, func, dwi, etc.)
@@ -65,34 +65,34 @@ The CSV columns use the full BIDS entity names (display names), not the short ke
 
 ## Filtering and Subsetting
 
-### `libBIDSsh_csv_filter`
+### `libBIDSsh_table_filter`
 
-Filters CSV data by columns, values, regex, and missing data.
+Filters TSV data by columns, values, regex, and missing data.
 
 ```bash
-libBIDSsh_csv_filter "${csv_data}" [OPTIONS]
+libBIDSsh_table_filter "${table_data}" [OPTIONS]
 ```
 
 **Options:**
 
-- `-c, --columns <col1,col2,...>`: Select columns by name or index
+- `-c, --columns <col1,col2,...>`: Select columns by name or index (tab-separated)
 - `-r, --row-filter <col:pattern>`: Keep rows where column matches value/regex (AND logic for multiple filters)
-- `-d, --drop-na <col1,col2,...>`: Drop rows where listed columns are "NA"
+- `-d, --drop-na <col1,col2,...>`: Drop rows where listed columns are "NA" (tab-separated)
 
 **Examples:**
 
 ```bash
 # Keep only subject and task columns
-libBIDSsh_csv_filter "$csv_data" -c "subject,task"
+libBIDSsh_table_filter "$table_data" -c $'subject\ttask'
 
 # Filter for balloon analog risk task (ds001)
-libBIDSsh_csv_filter "$csv_data" -r "task:balloonanalogrisktask"
+libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask"
 
 # Multiple filters: task AND subject 01
-libBIDSsh_csv_filter "$csv_data" -r "task:balloonanalogrisktask" -r "subject:sub-01"
+libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask" -r "subject:sub-01"
 
 # Complex filtering with regex
-libBIDSsh_csv_filter "$csv_data" -r "task:(rest|motor)" -r "run:[1-3]"
+libBIDSsh_table_filter "$table_data" -r "task:(rest|motor)" -r "run:[1-3]"
 ```
 
 ### `libBIDSsh_drop_na_columns`
@@ -100,26 +100,26 @@ libBIDSsh_csv_filter "$csv_data" -r "task:(rest|motor)" -r "run:[1-3]"
 Removes columns that contain only NA values across all rows.
 
 ```bash
-cleaned_csv=$(libBIDSsh_drop_na_columns "$csv_data")
+cleaned_table=$(libBIDSsh_drop_na_columns "$table_data")
 ```
 
 **Example:**
 
 ```bash
 # Remove empty columns from dataset
-csv_data=$(libBIDSsh_parse_bids_to_csv "bids-examples/ds001")
-cleaned_csv=$(libBIDSsh_drop_na_columns "$csv_data")
+table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
+cleaned_table=$(libBIDSsh_drop_na_columns "$table_data")
 ```
 
 ## JSON Processing
 
 ### `libBIDSsh_extension_json_rows_to_column_json_path`
 
-Processes CSV data to add a `json_path` column that links data files to their **direct** JSON sidecars.
+Processes TSV data to add a `json_path` column that links data files to their **direct** JSON sidecars.
 Note: This only matches files where a JSON file exists with the exact same name (except extension). It does not resolve BIDS inheritance.
 
 ```bash
-updated_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+updated_table=$(libBIDSsh_extension_json_rows_to_column_json_path "$table_data")
 ```
 
 **Behavior:**
@@ -132,8 +132,8 @@ updated_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
 **Example:**
 
 ```bash
-csv_data=$(libBIDSsh_parse_bids_to_csv "bids-examples/ds001")
-csv_with_json=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
+table_with_json=$(libBIDSsh_extension_json_rows_to_column_json_path "$table_data")
 ```
 
 ### `libBIDSsh_json_to_associative_array`
@@ -160,17 +160,17 @@ echo "TR: ${sidecar[RepetitionTime]}"  # Output: number:2
 
 ## Column Extraction
 
-### `libBIDSsh_csv_column_to_array`
+### `libBIDSsh_table_column_to_array`
 
 Extracts a column as a Bash array with deduplication and NA filtering.
 
 ```bash
-libBIDSsh_csv_column_to_array "$csv_data" "column" array_var [unique] [exclude_NA]
+libBIDSsh_table_column_to_array "$table_data" "column" array_var [unique] [exclude_NA]
 ```
 
 **Arguments:**
 
-- `csv_data`: CSV-formatted string
+- `table_data`: TSV-formatted string
 - `column`: Column name (e.g., `subject`) or index
 - `array_var`: Name of array variable to populate
 - `unique`: "true" (default) to return only unique values
@@ -181,28 +181,28 @@ libBIDSsh_csv_column_to_array "$csv_data" "column" array_var [unique] [exclude_N
 ```bash
 declare -a subjects
 # Note: Use "subject", not "sub"
-libBIDSsh_csv_column_to_array "$csv_data" "subject" subjects true true
+libBIDSsh_table_column_to_array "$table_data" "subject" subjects true true
 echo "Unique subjects: ${subjects[@]}"
 
 declare -a all_runs
-libBIDSsh_csv_column_to_array "$csv_data" "run" all_runs false false
+libBIDSsh_table_column_to_array "$table_data" "run" all_runs false false
 echo "All runs (including duplicates and NA): ${all_runs[@]}"
 ```
 
 ## Row Iteration
 
-### `libBIDS_csv_iterator`
+### `libBIDS_table_iterator`
 
-Iterates CSV rows, exposes fields in an associative array with optional sorting.
+Iterates TSV rows, exposes fields in an associative array with optional sorting.
 
 ```bash
-while libBIDS_csv_iterator "$csv_data" row_var [sort_col1] [sort_col2] [-r]; do
+while libBIDS_table_iterator "$table_data" row_var [sort_col1] [sort_col2] [-r]; do
   # Process row
 done
 ```
 
 **Arguments:**
-- `csv_data`: CSV data string
+- `table_data`: TSV data string
 - `row_var`: Name of associative array to populate with each row. Keys correspond to column headers (e.g., `row[subject]`).
 - `sort_columns`: Optional column names to sort by
 - `-r`: Optional reverse sort flag
@@ -211,7 +211,7 @@ done
 
 ```bash
 declare -A row
-while libBIDS_csv_iterator "$csv_data" row "subject" "session" "run"; do
+while libBIDS_table_iterator "$table_data" row "subject" "session" "run"; do
   echo "Processing: ${row[subject]} ${row[session]} ${row[run]}: ${row[path]}"
 done
 ```
@@ -246,18 +246,18 @@ _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
 source libBIDS.sh
 
 bids_path="bids-examples/ds001"
-csv_data=$(libBIDSsh_parse_bids_to_csv "$bids_path")
+table_data=$(libBIDSsh_parse_bids_to_table "$bids_path")
 
 # Extract unique subjects
 declare -a subjects
-libBIDSsh_csv_column_to_array "$csv_data" "subject" subjects true true
+libBIDSsh_table_column_to_array "$table_data" "subject" subjects true true
 echo "Found subjects: ${subjects[*]}"
 
 # Clean up empty columns
-csv_data=$(libBIDSsh_drop_na_columns "$csv_data")
+table_data=$(libBIDSsh_drop_na_columns "$table_data")
 
 # Add JSON sidecar information (if sidecars match exactly)
-csv_data=$(libBIDSsh_extension_json_rows_to_column_json_path "$csv_data")
+table_data=$(libBIDSsh_extension_json_rows_to_column_json_path "$table_data")
 ```
 
 ### Functional Data Processing
@@ -268,19 +268,19 @@ source libBIDS.sh
 
 # Using volume_timing dataset which has sidecars
 bids_path="bids-examples/volume_timing"
-csv_data=$(libBIDSsh_parse_bids_to_csv "$bids_path")
+table_data=$(libBIDSsh_parse_bids_to_table "$bids_path")
 
 # Filter for functional BOLD data
-func_csv=$(libBIDSsh_csv_filter "$csv_data" \
+func_table=$(libBIDSsh_table_filter "$table_data" \
   -r "data_type:func" \
   -r "suffix:bold")
 
 # Add JSON paths
-func_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$func_csv")
+func_table=$(libBIDSsh_extension_json_rows_to_column_json_path "$func_table")
 
 # Process each file with its JSON metadata
 declare -A row
-while libBIDS_csv_iterator "$func_csv" row "subject" "task" "run"; do
+while libBIDS_table_iterator "$func_table" row "subject" "task" "run"; do
   echo "Processing: ${row[path]}"
 
   if [[ "${row[json_path]}" != "NA" ]]; then
@@ -320,8 +320,9 @@ To see an example, rename the template file from `custom/custom_entities.json.tp
 
 ## Notes
 
-- All functions handle CSV data as strings, not files
+- All functions handle TSV data as strings, not files
 - NA values are used for missing BIDS entities
 - Pattern matching is permissive and may match non-BIDS-compliant files
 - JSON processing requires `jq` to be installed
 - Sort operations use version sort for natural ordering of numbers
+- Column lists for filtering should use tab-separated values (e.g., `$'subject\ttask'`)
