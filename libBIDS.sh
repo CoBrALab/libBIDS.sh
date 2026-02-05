@@ -7,17 +7,17 @@ fi
 
 set -euo pipefail
 
-libBIDSsh_csv_filter() {
-  # Filter CSV-structured BIDS data, returning specified columns and optionally filtering rows
-  # Usage: libBIDSsh_csv_filter "${csv_data}" [OPTIONS]
+libBIDSsh_table_filter() {
+  # Filter TSV-structured BIDS data, returning specified columns and optionally filtering rows
+  # Usage: libBIDSsh_table_filter "${table_data}" [OPTIONS]
   # Options:
-  #   -c, --columns <list>      Comma-separated list of column indices or names to keep
+  #   -c, --columns <list>      Tab-separated list of column indices or names to keep
   #   -r, --row-filter <col:pattern> Filter rows where column matches exact string or regex
-  #   -d, --drop-na <list>      Comma-separated list of columns to check for NA values
-  # Returns: Filtered CSV data through stdout
+  #   -d, --drop-na <list>      Tab-separated list of columns to check for NA values
+  # Returns: Filtered TSV data through stdout
   # Example:
-  #   filtered=$(libBIDSsh_csv_filter "$data" -c "sub,ses" -r "task:rest" -d "run")
-  local csv_data="$1"
+  #   filtered=$(libBIDSsh_table_filter "$data" -c "sub	ses" -r "task:rest" -d "run")
+  local table_data="$1"
   shift
 
   local columns=""
@@ -53,9 +53,9 @@ libBIDSsh_csv_filter() {
     -v row_filters_str="${row_filters_str}" \
     -v drop_na_cols="${drop_na_cols}" \
     'BEGIN {
-            FS=","; OFS=",";
-            split(columns, cols, ",");
-            split(drop_na_cols, na_cols, ",");
+            FS="\t"; OFS="\t";
+            split(columns, cols, "\t");
+            split(drop_na_cols, na_cols, "\t");
 
             # Parse row filters
             filter_count = split(row_filters_str, filter_lines, "\n");
@@ -107,7 +107,7 @@ libBIDSsh_csv_filter() {
                     } else if (filters[i]["col"] ~ /^[0-9]+$/) {
                         col = filters[i]["col"];
                     } else {
-                        print "Error: Row filter column \"" filters[i]["col"] "\" not found in CSV header" > "/dev/stderr";
+                        print "Error: Row filter column \"" filters[i]["col"] "\" not found in table header" > "/dev/stderr";
                         exit 1;
                     }
 
@@ -124,7 +124,7 @@ libBIDSsh_csv_filter() {
                     } else if (na_cols[i] ~ /^[0-9]+$/) {
                         col = na_cols[i];
                     } else {
-                        print "Error: Drop NA column \"" na_cols[i] "\" not found in CSV header" > "/dev/stderr";
+                        print "Error: Drop NA column \"" na_cols[i] "\" not found in table header" > "/dev/stderr";
                         exit 1;
                     }
 
@@ -140,18 +140,18 @@ libBIDSsh_csv_filter() {
             } else {
                 print;
             }
-        }' <<<"${csv_data}"
+        }' <<<"${table_data}"
 }
 
 libBIDSsh_drop_na_columns() {
-  # Remove columns from CSV data that contain only NA values
-  # Usage: libBIDSsh_drop_na_columns "${csv_data}"
-  # Returns: CSV data with NA-only columns removed through stdout
+  # Remove columns from TSV data that contain only NA values
+  # Usage: libBIDSsh_drop_na_columns "${table_data}"
+  # Returns: TSV data with NA-only columns removed through stdout
   # Example:
   #   cleaned=$(libBIDSsh_drop_na_columns "$data")
-  local csv_data="$1"
-  awk -F, '
-    BEGIN {OFS=","}
+  local table_data="$1"
+  awk -F'\t' '
+    BEGIN {OFS="\t"}
     NR == 1 {
         # Save header and initialize column tracking
         header = $0
@@ -172,7 +172,7 @@ libBIDSsh_drop_na_columns() {
     }
     END {
         # Determine which columns to keep
-        split(header, header_fields, /,/)
+        split(header, header_fields, /\t/)
         for (i = 1; i <= NF; i++) {
             if (!col_all_na[i]) {
                 cols_to_keep[i] = 1
@@ -194,7 +194,7 @@ libBIDSsh_drop_na_columns() {
 
         # Print each row (only keeping non-NA columns)
         for (j = 2; j <= NR; j++) {
-            split(rows[j], row_fields, /,/)
+            split(rows[j], row_fields, /\t/)
             first_field = 1
             for (i = 1; i <= NF; i++) {
                 if (cols_to_keep[i]) {
@@ -207,7 +207,7 @@ libBIDSsh_drop_na_columns() {
             }
             printf "\n"
         }
-    }' <<<"${csv_data}"
+    }' <<<"${table_data}"
 }
 
 _libBIDSsh_parse_filename() {
@@ -266,16 +266,16 @@ _libBIDSsh_parse_filename() {
 }
 
 libBIDSsh_extension_json_rows_to_column_json_path() {
-  # Convert JSON file rows into a json_path column in the CSV data
-  # Usage: libBIDSsh_extension_json_rows_to_column_json_path "${csv_data}"
-  # Returns: CSV data with json_path column added through stdout
+  # Convert JSON file rows into a json_path column in the TSV data
+  # Usage: libBIDSsh_extension_json_rows_to_column_json_path "${table_data}"
+  # Returns: TSV data with json_path column added through stdout
   # Example:
   #   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$data")
-  local csv_data="$1"
+  local table_data="$1"
 
-  awk -F',' '
+  awk -F'\t' '
   BEGIN {
-    OFS = ",";
+    OFS = "\t";
   }
 
   NR == 1 {
@@ -343,7 +343,7 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
       }
     }
   }
-  ' <<<"$csv_data"
+  ' <<<"$table_data"
 }
 
 _libBIDSsh_load_custom_entities() {
@@ -351,7 +351,7 @@ _libBIDSsh_load_custom_entities() {
   # JSON files should be placed in ./custom directory
   # Each JSON file should contain an "entities" array with objects having:
   #   - name: entity short name
-  #   - display_name: entity display name for CSV headers
+  #   - display_name: entity display name for TSV headers
   #   - pattern: bash glob pattern for matching
 
 
@@ -412,12 +412,12 @@ _libBIDSsh_load_custom_entities() {
   shopt -u nullglob
 }
 
-libBIDSsh_parse_bids_to_csv() {
-  # Parse a BIDS directory structure into CSV format
-  # Usage: libBIDSsh_parse_bids_to_csv "/path/to/bids/dataset"
-  # Returns: CSV data through stdout with columns for each BIDS entity
+libBIDSsh_parse_bids_to_table() {
+  # Parse a BIDS directory structure into TSV format
+  # Usage: libBIDSsh_parse_bids_to_table "/path/to/bids/dataset"
+  # Returns: TSV data through stdout with columns for each BIDS entity
   # Example:
-  #   bids_csv=$(libBIDSsh_parse_bids_to_csv "/path/to/bids")
+  #   bids_table=$(libBIDSsh_parse_bids_to_table "/path/to/bids")
   local bidspath="${1:-}"
   if [[ ! -d "$bidspath" ]]; then
     echo "Error: Directory '$bidspath' does not exist" >&2
@@ -499,7 +499,7 @@ libBIDSsh_parse_bids_to_csv() {
   shopt -u globstar
 
   # Order of entities from generate_entity_patterns.sh
-  entities_displayname_order="subject,session,sample,task,tracksys,acquisition,nucleus,volume,ceagent,tracer,stain,reconstruction,direction,run,modality,echo,flip,inversion,mtransfer,part,processing,hemisphere,space,split,recording,chunk,segmentation,resolution,density,label,description"
+  entities_displayname_order="subject	session	sample	task	tracksys	acquisition	nucleus	volume	ceagent	tracer	stain	reconstruction	direction	run	modality	echo	flip	inversion	mtransfer	part	processing	hemisphere	space	split	recording	chunk	segmentation	resolution	density	label	description"
   entities_order="sub ses sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk seg res den label desc"
 
   # Add custom entities to ordering
@@ -508,37 +508,37 @@ libBIDSsh_parse_bids_to_csv() {
   done
 
   for entity_display in "${CUSTOM_ENTITY_DISPLAY_NAMES[@]}"; do
-    entities_displayname_order+=",$entity_display"
+    entities_displayname_order+="	$entity_display"
   done
 
-  echo "derivatives,data_type,${entities_displayname_order},suffix,extension,path"
+  printf "derivatives\tdata_type\t%s\tsuffix\textension\tpath\n" "${entities_displayname_order}"
   for file in "${files[@]}"; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
     for key in derivatives data_type ${entities_order} suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
-        echo -n "${file_info[${key}]},"
+        printf "${file_info[${key}]}\t"
       else
-        echo -n NA,
+        printf "NA\t"
       fi
     done
-    echo ""
-  done | sed 's/,*$//'
+    printf "\n"
+  done | sed 's/\t$//'
 }
 
-libBIDSsh_csv_column_to_array() {
-  # Extract a column from CSV data into a bash array
-  # Usage: libBIDSsh_csv_column_to_array "${csv_data}" "column_name" array_ref [unique] [exclude_NA]
+libBIDSsh_table_column_to_array() {
+  # Extract a column from TSV data into a bash array
+  # Usage: libBIDSsh_table_column_to_array "${table_data}" "column_name" array_ref [unique] [exclude_NA]
   # Arguments:
-  #   csv_data: CSV-formatted string
+  #   table_data: TSV-formatted string
   #   column_name: Name or index of column to extract
   #   array_ref: Name of array variable to populate (declare -a)
   #   unique: (optional) "true" to return only unique values (default: true)
   #   exclude_NA: (optional) "true" to exclude NA values (default: true)
   # Example:
   #   declare -a subjects
-  #   libBIDSsh_csv_column_to_array "$data" "sub" subjects true true
-  local csv_data="$1"
+  #   libBIDSsh_table_column_to_array "$data" "sub" subjects true true
+  local table_data="$1"
   local column="$2"
   local -n array_ref="$3" # nameref to the array variable
   local unique="${4:-true}"
@@ -555,7 +555,7 @@ libBIDSsh_csv_column_to_array() {
     fi
     array_ref+=("${line}")
   done < <(awk -v col="${column}" '
-        BEGIN { FS="," }
+        BEGIN { FS="\t" }
         NR == 1 {
             if (col ~ /^[0-9]+$/) {
                 col_idx = col
@@ -571,10 +571,10 @@ libBIDSsh_csv_column_to_array() {
             next  # Skip header row
         }
         { print $col_idx }
-    ' <<<"${csv_data}")
+    ' <<<"${table_data}")
 
   # Check if awk succeeded
-  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${csv_data}") -gt 1 ]; then
+  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${table_data}") -gt 1 ]; then
     echo "Error: Column '${column}' not found or no data rows present" >&2
     return 1
   fi
@@ -593,21 +593,21 @@ libBIDSsh_csv_column_to_array() {
   fi
 }
 
-libBIDS_csv_iterator() {
-  # Iterate through CSV data row by row with optional sorting
-  # Usage: libBIDS_csv_iterator "${csv_data}" array_ref [sort_columns...] [-r]
+libBIDS_table_iterator() {
+  # Iterate through TSV data row by row with optional sorting
+  # Usage: libBIDS_table_iterator "${table_data}" array_ref [sort_columns...] [-r]
   # Arguments:
-  #   csv_data: CSV-formatted string
+  #   table_data: TSV-formatted string
   #   array_ref: Name of associative array to populate with each row's data
   #   sort_columns: (optional) Columns to sort by (multiple allowed)
   #   -r: (optional) Reverse sort order
   # Returns: 0 for success (more rows), 1 when done
   # Example:
   #   declare -A row
-  #   while libBIDS_csv_iterator "$data" row "sub" "ses" "-r"; do
+  #   while libBIDS_table_iterator "$data" row "sub" "ses" "-r"; do
   #     echo "Processing subject ${row[sub]} session ${row[ses]}"
   #   done
-  local csv_var="${1:-}"    # Name of the variable containing CSV data
+  local table_var="${1:-}"    # Name of the variable containing TSV data
   if [[ -z "${2:-}" ]]; then
     echo "Error: Missing array reference argument" >&2
     return 1
@@ -627,7 +627,7 @@ libBIDS_csv_iterator() {
   done
 
   # Read all lines into an array
-  IFS=$'\n' read -d '' -r -a lines <<<"${csv_var}" || true
+  IFS=$'\n' read -d '' -r -a lines <<<"${table_var}" || true
 
   # Handle empty input
   if [[ ${#lines[@]} -eq 0 ]]; then
@@ -642,7 +642,7 @@ libBIDS_csv_iterator() {
   # If we have sort columns, sort the data
   if ((${#sort_columns[@]} > 0)); then
     # Get column indices for sorting
-    IFS=',' read -r -a headers <<<"${header}"
+    IFS=$'\t' read -r -a headers <<<"${header}"
     declare -A column_indices
     for i in "${!headers[@]}"; do
       column_indices["${headers[i]}"]=${i}
@@ -655,7 +655,7 @@ libBIDS_csv_iterator() {
         local idx=$((column_indices["${col}"] + 1)) # sort uses 1-based indexing
         sort_keys+=("-k$idx,$idx")
       else
-        echo "Error: Column '${col}' not found in CSV header" >&2
+        echo "Error: Column '${col}' not found in table header" >&2
         return 1
       fi
     done
@@ -671,7 +671,7 @@ libBIDS_csv_iterator() {
       local old_ifs="${IFS}"
       IFS=$'\n' sorted_data=($(
         printf "%s\n" "${data_lines[@]}" |
-          sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+          sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
       )) || true
       IFS="${old_ifs}"
     else
@@ -679,7 +679,7 @@ libBIDS_csv_iterator() {
     fi
   else
     # No specific sort columns provided, sort by all columns left to right
-    IFS=',' read -r -a headers <<<"${header}"
+    IFS=$'\t' read -r -a headers <<<"${header}"
     local sort_keys=()
     for i in "${!headers[@]}"; do
       local idx=$((i + 1)) # sort uses 1-based indexing
@@ -697,7 +697,7 @@ libBIDS_csv_iterator() {
       local old_ifs="${IFS}"
       IFS=$'\n' sorted_data=($(
         printf "%s\n" "${data_lines[@]}" |
-          sort --version-sort -t, "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+          sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
       )) || true
       IFS="${old_ifs}"
     else
@@ -720,14 +720,14 @@ libBIDS_csv_iterator() {
 
   # Process header if we're on the first line
   if ((current_line == 0)); then
-    IFS=',' read -r -a headers <<<"${header}"
+    IFS=$'\t' read -r -a headers <<<"${header}"
     ((current_line++))
   fi
 
   # Read the current data line (with bounds checking)
   if ((current_line > 0 && current_line <= ${#sorted_data[@]})); then
     local line_content="${sorted_data[current_line - 1]}"
-    IFS=',' read -r -a values <<<"${line_content}"
+    IFS=$'\t' read -r -a values <<<"${line_content}"
 
     # Store key-value pairs in the array
     for i in "${!headers[@]}"; do
@@ -789,5 +789,5 @@ if ! (return 0 2>/dev/null); then
     echo 'error: the first argument must be a path to a bids dataset'
     exit 1
   fi
-  libBIDSsh_parse_bids_to_csv "${1}"
+  libBIDSsh_parse_bids_to_table "${1}"
 fi
