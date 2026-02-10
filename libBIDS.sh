@@ -593,9 +593,9 @@ libBIDSsh_csv_column_to_array() {
   fi
 }
 
-libBIDS_csv_iterator() {
+libBIDSsh_csv_iterator() {
   # Iterate through CSV data row by row with optional sorting
-  # Usage: libBIDS_csv_iterator "${csv_data}" array_ref [sort_columns...] [-r]
+  # Usage: libBIDSsh_csv_iterator "${csv_data}" array_ref [sort_columns...] [-r]
   # Arguments:
   #   csv_data: CSV-formatted string
   #   array_ref: Name of associative array to populate with each row's data
@@ -604,7 +604,7 @@ libBIDS_csv_iterator() {
   # Returns: 0 for success (more rows), 1 when done
   # Example:
   #   declare -A row
-  #   while libBIDS_csv_iterator "$data" row "sub" "ses" "-r"; do
+  #   while libBIDSsh_csv_iterator "$data" row "sub" "ses" "-r"; do
   #     echo "Processing subject ${row[sub]} session ${row[ses]}"
   #   done
   local csv_var="${1:-}"    # Name of the variable containing CSV data

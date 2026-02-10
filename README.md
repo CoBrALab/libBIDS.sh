@@ -191,12 +191,12 @@ echo "All runs (including duplicates and NA): ${all_runs[@]}"
 
 ## Row Iteration
 
-### `libBIDS_csv_iterator`
+### `libBIDSsh_csv_iterator`
 
 Iterates CSV rows, exposes fields in an associative array with optional sorting.
 
 ```bash
-while libBIDS_csv_iterator "$csv_data" row_var [sort_col1] [sort_col2] [-r]; do
+while libBIDSsh_csv_iterator "$csv_data" row_var [sort_col1] [sort_col2] [-r]; do
   # Process row
 done
 ```
@@ -211,7 +211,7 @@ done
 
 ```bash
 declare -A row
-while libBIDS_csv_iterator "$csv_data" row "subject" "session" "run"; do
+while libBIDSsh_csv_iterator "$csv_data" row "subject" "session" "run"; do
   echo "Processing: ${row[subject]} ${row[session]} ${row[run]}: ${row[path]}"
 done
 ```
@@ -280,7 +280,7 @@ func_csv=$(libBIDSsh_extension_json_rows_to_column_json_path "$func_csv")
 
 # Process each file with its JSON metadata
 declare -A row
-while libBIDS_csv_iterator "$func_csv" row "subject" "task" "run"; do
+while libBIDSsh_csv_iterator "$func_csv" row "subject" "task" "run"; do
   echo "Processing: ${row[path]}"
 
   if [[ "${row[json_path]}" != "NA" ]]; then
