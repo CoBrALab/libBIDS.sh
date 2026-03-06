@@ -607,7 +607,7 @@ libBIDSsh_table_iterator() {
   #   while libBIDSsh_table_iterator "$data" row "sub" "ses" "-r"; do
   #     echo "Processing subject ${row[sub]} session ${row[ses]}"
   #   done
-  local csv_var="${1:-}"    # Name of the variable containing CSV data
+  local table_var="${1:-}"  # Name of the variable containing table data
   if [[ -z "${2:-}" ]]; then
     echo "Error: Missing array reference argument" >&2
     return 1
