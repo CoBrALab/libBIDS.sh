@@ -17,7 +17,7 @@ libBIDSsh_table_filter() {
   # Returns: Filtered TSV data through stdout
   # Example:
   #   filtered=$(libBIDSsh_table_filter "$data" -c "sub,ses" -r "task:rest" -d "run")
-  local csv_data="$1"
+  local table_data="$1"
   shift
 
   local columns=""
