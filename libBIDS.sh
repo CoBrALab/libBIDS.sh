@@ -530,7 +530,7 @@ libBIDSsh_table_column_to_array() {
   # Extract a column from table data into a bash array
   # Usage: libBIDSsh_table_column_to_array "${table_data}" "column_name" array_ref [unique] [exclude_NA]
   # Arguments:
-  #   csv_data: TSV-formatted string
+  #   table_data: TSV-formatted string
   #   column_name: Name or index of column to extract
   #   array_ref: Name of array variable to populate (declare -a)
   #   unique: (optional) "true" to return only unique values (default: true)
@@ -597,8 +597,8 @@ libBIDSsh_table_iterator() {
   # Iterate through table data row by row with optional sorting
   # Usage: libBIDSsh_table_iterator "${table_data}" array_ref [sort_columns...] [-r]
   # Arguments:
-  #   csv_data: TSV-formatted string
-  #   array_ref: Name of associative array to populate with each row's data
+  #   table_data: TSV-formatted string
+  #   arr_ref: Name of associative array to populate with each row's data
   #   sort_columns: (optional) Columns to sort by (multiple allowed)
   #   -r: (optional) Reverse sort order
   # Returns: 0 for success (more rows), 1 when done
