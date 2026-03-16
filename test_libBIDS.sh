@@ -5,7 +5,7 @@ set -euo pipefail
 # Avoid matching current dir during glob tests if it isn't expected
 shopt -u nullglob
 
-# Source the library
+# shellcheck disable=SC1091
 source "libBIDS.sh"
 
 # Simple test runner
@@ -16,7 +16,7 @@ tests_failed=0
 run_test() {
   local name="$1"
   local func="$2"
-  
+
   tests_run=$((tests_run + 1))
   echo "Running $name..."
   if $func; then
@@ -32,7 +32,7 @@ assert_equals() {
   local expected="$1"
   local actual="$2"
   local msg="${3:-}"
-  
+
   if [[ "$expected" != "$actual" ]]; then
     echo "    Assertion failed: $msg"
     echo "      Expected: '$expected'"
@@ -46,7 +46,7 @@ assert_contains() {
   local substring="$1"
   local string="$2"
   local msg="${3:-}"
-  
+
   if [[ "$string" != *"$substring"* ]]; then
     echo "    Assertion failed: $msg"
     echo "      Expected to contain: '$substring'"
@@ -60,7 +60,7 @@ test_parse_filename() {
   local file="sub-01_ses-test_task-fingerfootlips_run-1_bold.nii.gz"
   declare -A file_info
   _libBIDSsh_parse_filename "$file" file_info
-  
+
   assert_equals "sub-01" "${file_info[sub]:-}" "subject should be sub-01" || return 1
   assert_equals "ses-test" "${file_info[ses]:-}" "session should be ses-test" || return 1
   assert_equals "task-fingerfootlips" "${file_info[task]:-}" "task should be task-fingerfootlips" || return 1
@@ -74,20 +74,21 @@ test_parse_bids_to_table() {
   local bids_dir="bids-examples/ds001"
   local table
   table=$(libBIDSsh_parse_bids_to_table "$bids_dir")
-  
+
   assert_contains "sub-01" "$table" "table should contain sub-01" || return 1
   assert_contains "task-balloonanalogrisktask" "$table" "table should contain task-balloonanalogrisktask" || return 1
-  
+
   # Check header
   local header
-  header=$(head -n 1 <<< "$table")
+  header=$(head -n 1 <<<"$table")
   assert_contains "sub" "$header" "header should contain sub" || return 1
   assert_contains "task" "$header" "header should contain task" || return 1
   assert_contains "path" "$header" "header should contain path" || return 1
-  
+
   # Verify size roughly (this is a known dataset)
-  local row_count=$(wc -l <<< "$table")
-  if (( row_count < 10 )); then
+  local row_count
+  row_count=$(wc -l <<<"$table")
+  if ((row_count < 10)); then
     echo "    Assertion failed: dataset parsed seems too small ($row_count rows)"
     return 1
   fi
@@ -99,14 +100,14 @@ test_table_filter() {
 A	B	C
 1	2	3
 NA	B	C"
-  
+
   local filtered
   filtered=$(libBIDSsh_table_filter "$table" -c "col1,col3")
   assert_equals "col1	col3
 A	C
 1	3
 NA	C" "$filtered" "should keep only col1 and col3" || return 1
-  
+
   local row_filtered
   row_filtered=$(libBIDSsh_table_filter "$table" -r "col2:B")
   assert_equals "col1	col2	col3
@@ -131,7 +132,7 @@ test_drop_na_columns() {
   local table="col1	col2	col3
 A	NA	C
 1	NA	3"
-  
+
   local cleaned
   cleaned=$(libBIDSsh_drop_na_columns "$table")
   assert_equals "col1	col3
@@ -149,7 +150,7 @@ nii.gz	/path/to/other.nii.gz	sub-2"
 
   local updated
   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
-  
+
   assert_contains "json_path" "$updated" "should add json_path column" || return 1
   assert_contains "/path/to/data.json" "$updated" "should map json path to nii.gz row" || return 1
   assert_contains "NA" "$updated" "sub-2 should have NA for json_path" || return 1
@@ -179,14 +180,14 @@ sub-02	ses-2"
 
   declare -A row
   local count=0
-  local subjects=""
+  local subj_str=""
   while libBIDSsh_table_iterator "$table" row "sub"; do
     count=$((count + 1))
-    subjects="${subjects}${row[sub]} "
+    subj_str="${subj_str}${row[sub]} "
   done
-  
+
   assert_equals "2" "$count" "should iterate 2 times" || return 1
-  assert_equals "sub-01 sub-02 " "$subjects" "should extract sub values" || return 1
+  assert_equals "sub-01 sub-02 " "$subj_str" "should extract sub values" || return 1
   return 0
 }
 
@@ -196,10 +197,10 @@ test_json_to_associative_array() {
     echo "    Skip: $json_file not found"
     return 1 # Fails if we don't have the submodule checked out
   fi
-  
+
   declare -A json_data
   libBIDSsh_json_to_associative_array "$json_file" json_data
-  
+
   assert_equals "string" "${json_data[BIDSVersion]%\:*}" "BIDSVersion should be present as string" || return 1
   assert_equals "string" "${json_data[Name]%\:*}" "Name should be present as string" || return 1
   return 0
@@ -223,6 +224,6 @@ echo "Executed: $tests_run"
 echo "Passed:   $tests_passed"
 echo "Failed:   $tests_failed"
 
-if (( tests_failed > 0 )); then
+if ((tests_failed > 0)); then
   exit 1
 fi

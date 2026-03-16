@@ -29,31 +29,32 @@ libBIDSsh_table_filter() {
   # Parse options
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    -c | --columns)
-      columns="$2"
-      shift 2
-      ;;
-    -r | --row-filter)
-      row_filters+=("$2")
-      shift 2
-      ;;
-    -d | --drop-na)
-      drop_na_cols="$2"
-      shift 2
-      ;;
-    -v | --invert)
-      invert_filter="1"
-      shift
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      return 1
-      ;;
+      -c | --columns)
+        columns="$2"
+        shift 2
+        ;;
+      -r | --row-filter)
+        row_filters+=("$2")
+        shift 2
+        ;;
+      -d | --drop-na)
+        drop_na_cols="$2"
+        shift 2
+        ;;
+      -v | --invert)
+        invert_filter="1"
+        shift
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        return 1
+        ;;
     esac
   done
 
   # Convert row filters array to a delimiter-separated string that awk can parse
-  local row_filters_str=$(printf "%s\n" "${row_filters[@]}" | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
+  local row_filters_str
+  row_filters_str=$(printf "%s\n" "${row_filters[@]}" | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
 
   awk -v columns="${columns}" \
     -v row_filters_str="${row_filters_str}" \
@@ -223,6 +224,7 @@ libBIDSsh_drop_na_columns() {
     }' <<<"${table_data}"
 }
 
+# shellcheck disable=SC2154,SC2034
 _libBIDSsh_parse_filename() {
   # Internal function to parse BIDS filenames into components
   # Usage: _libBIDSsh_parse_filename "${path}" array_name
@@ -234,7 +236,8 @@ _libBIDSsh_parse_filename() {
   local -n arr="$2" # nameref to the associative array
 
   # Extract the filename without path
-  local filename=$(basename "${path}")
+  local filename
+  filename=$(basename "${path}")
 
   # Initialize the arrays
   arr=()
@@ -245,7 +248,7 @@ _libBIDSsh_parse_filename() {
   arr[extension]="${filename#*.}"
   # Extract from schema
   # jq -r .objects.datatypes.[].value schema.json  | paste -s -d'|'
-  arr[data_type]=$(grep -o -E "(anat|beh|dwi|eeg|fmap|func|ieeg|meg|micr|motion|mrs|perf|pet|phenotype|nirs)" <<<$(dirname ${path}) | head -1 || echo "NA")
+  arr[data_type]=$(grep -o -E "(anat|beh|dwi|eeg|fmap|func|ieeg|meg|micr|motion|mrs|perf|pet|phenotype|nirs)" <<<"$(dirname "${path}")" | head -1 || echo "NA")
   arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
@@ -367,8 +370,8 @@ _libBIDSsh_load_custom_entities() {
   #   - display_name: entity display name for table headers
   #   - pattern: bash glob pattern for matching
 
-
-  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local plugin_dir="${script_dir}/custom"
   if ! command -v jq >/dev/null 2>&1; then
     echo "Error: jq is required for custom entity support" >&2
@@ -505,6 +508,7 @@ libBIDSsh_parse_bids_to_table() {
   shopt -s nullglob
   shopt -s globstar
 
+  # shellcheck disable=SC2206
   local files=("${bidspath}"/**/${pattern})
 
   shopt -u extglob
@@ -587,7 +591,7 @@ libBIDSsh_table_column_to_array() {
     ' <<<"${table_data}")
 
   # Check if awk succeeded
-  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${table_data}") -gt 1 ]; then
+  if ((${#array_ref[@]} == 0)) && (($(wc -l <<<"${table_data}") > 1)); then
     echo "Error: Column '${column}' not found or no data rows present" >&2
     return 1
   fi
@@ -620,7 +624,7 @@ libBIDSsh_table_iterator() {
   #   while libBIDSsh_table_iterator "$data" row "sub" "ses" "-r"; do
   #     echo "Processing subject ${row[sub]} session ${row[ses]}"
   #   done
-  local table_var="${1:-}"  # Name of the variable containing table data
+  local table_var="${1:-}" # Name of the variable containing table data
   if [[ -z "${2:-}" ]]; then
     echo "Error: Missing array reference argument" >&2
     return 1
@@ -681,12 +685,10 @@ libBIDSsh_table_iterator() {
 
     # Sort the data lines (handle empty case)
     if [[ ${#data_lines[@]} -gt 0 ]]; then
-      local old_ifs="${IFS}"
-      IFS=$'\n' sorted_data=($(
+      readarray -t sorted_data < <(
         printf "%s\n" "${data_lines[@]}" |
           sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
-      )) || true
-      IFS="${old_ifs}"
+      ) || true
     else
       sorted_data=()
     fi
@@ -707,12 +709,10 @@ libBIDSsh_table_iterator() {
 
     # Sort the data lines (handle empty case)
     if [[ ${#data_lines[@]} -gt 0 ]]; then
-      local old_ifs="${IFS}"
-      IFS=$'\n' sorted_data=($(
+      readarray -t sorted_data < <(
         printf "%s\n" "${data_lines[@]}" |
           sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
-      )) || true
-      IFS="${old_ifs}"
+      ) || true
     else
       sorted_data=()
     fi
@@ -759,6 +759,7 @@ libBIDSsh_table_iterator() {
   return 0
 }
 
+# shellcheck disable=SC2178
 libBIDSsh_json_to_associative_array() {
   # Parse a JSON file into a bash associative array
   # Usage: libBIDSsh_json_to_associative_array "file.json" array_ref
