@@ -13,6 +13,7 @@ libBIDSsh_table_filter() {
   # Options:
   #   -c, --columns <list>      Comma-separated list of column indices or names to keep
   #   -r, --row-filter <col:pattern> Filter rows where column matches exact string or regex
+  #   -v, --invert              Invert row filter logic (remove matching rows instead of keeping)
   #   -d, --drop-na <list>      Comma-separated list of columns to check for NA values
   # Returns: Filtered TSV data through stdout
   # Example:
@@ -23,6 +24,7 @@ libBIDSsh_table_filter() {
   local columns=""
   local row_filters=()
   local drop_na_cols=""
+  local invert_filter=""
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -39,6 +41,10 @@ libBIDSsh_table_filter() {
       drop_na_cols="$2"
       shift 2
       ;;
+    -v | --invert)
+      invert_filter="1"
+      shift
+      ;;
     *)
       echo "Unknown option: $1" >&2
       return 1
@@ -52,6 +58,7 @@ libBIDSsh_table_filter() {
   awk -v columns="${columns}" \
     -v row_filters_str="${row_filters_str}" \
     -v drop_na_cols="${drop_na_cols}" \
+    -v invert_filter="${invert_filter}" \
     'BEGIN {
             FS="\t"; OFS="\t";
             split(columns, cols, ",");
@@ -111,7 +118,13 @@ libBIDSsh_table_filter() {
                         exit 1;
                     }
 
-                    if ($col !~ filters[i]["pattern"]) next;
+                    if (invert_filter == "1") {
+                        # Invert mode: skip row if pattern MATCHES
+                        if ($col ~ filters[i]["pattern"]) next;
+                    } else {
+                        # Normal mode: skip row if pattern does NOT match
+                        if ($col !~ filters[i]["pattern"]) next;
+                    }
                 }
             }
 
@@ -140,7 +153,7 @@ libBIDSsh_table_filter() {
             } else {
                 print;
             }
-        }' <<<"${csv_data}"
+        }' <<<"${table_data}"
 }
 
 libBIDSsh_drop_na_columns() {

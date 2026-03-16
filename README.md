@@ -77,6 +77,7 @@ libBIDSsh_table_filter "${table_data}" [OPTIONS]
 
 - `-c, --columns <col1,col2,...>`: Select columns by name or index
 - `-r, --row-filter <col:pattern>`: Keep rows where column matches value/regex (AND logic for multiple filters)
+- `-v, --invert`: Invert row filter - remove matching rows instead of keeping them
 - `-d, --drop-na <col1,col2,...>`: Drop rows where listed columns are "NA"
 
 **Examples:**
@@ -93,6 +94,9 @@ libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask" -r "subject
 
 # Complex filtering with regex
 libBIDSsh_table_filter "$table_data" -r "task:(rest|motor)" -r "run:[1-3]"
+
+# Remove all bold files (invert filter)
+libBIDSsh_table_filter "$table_data" -r "suffix:bold" --invert
 ```
 
 ### `libBIDSsh_drop_na_columns`
