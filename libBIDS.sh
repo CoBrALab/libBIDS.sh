@@ -640,7 +640,7 @@ libBIDSsh_table_iterator() {
   done
 
   # Read all lines into an array
-  IFS=$'\n' read -d '' -r -a lines <<<"${csv_var}" || true
+  IFS=$'\n' read -d '' -r -a lines <<<"${table_var}" || true
 
   # Handle empty input
   if [[ ${#lines[@]} -eq 0 ]]; then
