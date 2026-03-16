@@ -162,7 +162,7 @@ libBIDSsh_drop_na_columns() {
   # Returns: Table data with NA-only columns removed through stdout
   # Example:
   #   cleaned=$(libBIDSsh_drop_na_columns "$data")
-  local csv_data="$1"
+  local table_data="$1"
   awk -F'\t' '
     BEGIN {OFS="\t"}
     NR == 1 {
@@ -220,7 +220,7 @@ libBIDSsh_drop_na_columns() {
             }
             printf "\n"
         }
-    }' <<<"${csv_data}"
+    }' <<<"${table_data}"
 }
 
 _libBIDSsh_parse_filename() {
@@ -284,7 +284,7 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
   # Returns: Table data with json_path column added through stdout
   # Example:
   #   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$data")
-  local csv_data="$1"
+  local table_data="$1"
 
   awk -F'\t' '
   BEGIN {
@@ -356,7 +356,7 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
       }
     }
   }
-  ' <<<"$csv_data"
+  ' <<<"$table_data"
 }
 
 _libBIDSsh_load_custom_entities() {
@@ -551,7 +551,7 @@ libBIDSsh_table_column_to_array() {
   # Example:
   #   declare -a subjects
   #   libBIDSsh_table_column_to_array "$data" "sub" subjects true true
-  local csv_data="$1"
+  local table_data="$1"
   local column="$2"
   local -n array_ref="$3" # nameref to the array variable
   local unique="${4:-true}"
@@ -584,10 +584,10 @@ libBIDSsh_table_column_to_array() {
             next  # Skip header row
         }
         { print $col_idx }
-    ' <<<"${csv_data}")
+    ' <<<"${table_data}")
 
   # Check if awk succeeded
-  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${csv_data}") -gt 1 ]; then
+  if [ ${#array_ref[@]} -eq 0 ] && [ $(wc -l <<<"${table_data}") -gt 1 ]; then
     echo "Error: Column '${column}' not found or no data rows present" >&2
     return 1
   fi
