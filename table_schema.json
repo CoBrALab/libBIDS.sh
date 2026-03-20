@@ -1,0 +1,407 @@
+{
+  "profile": "tabular-data-schema",
+  "missingValues": [
+    "NA",
+    ""
+  ],
+  "primaryKey": "path",
+  "fields": [
+    {
+      "name": "derivatives",
+      "title": "Derivative Pipeline",
+      "type": "string",
+      "description": "Pipeline name extracted from the derivatives/ folder path. NA if the file is not in a derivatives directory."
+    },
+    {
+      "name": "data_type",
+      "title": "Data Type",
+      "type": "string",
+      "description": "BIDS data type inferred from the directory structure, indicating the broad category of data.",
+      "constraints": {
+        "required": true,
+        "enum": [
+          "anat",
+          "beh",
+          "dwi",
+          "eeg",
+          "fmap",
+          "func",
+          "ieeg",
+          "meg",
+          "micr",
+          "motion",
+          "mrs",
+          "perf",
+          "pet",
+          "phenotype",
+          "nirs"
+        ]
+      }
+    },
+    {
+      "name": "subject",
+      "title": "Subject",
+      "type": "string",
+      "format": "label",
+      "description": "A person or animal participating in the study. Corresponds to the sub-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "session",
+      "title": "Session",
+      "type": "string",
+      "format": "label",
+      "description": "A logical grouping of neuroimaging and behavioral data consistent across subjects. Corresponds to the ses-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "sample",
+      "title": "Sample",
+      "type": "string",
+      "format": "label",
+      "description": "A sample pertaining to a subject such as tissue, primary cell, or cell-free sample. Corresponds to the sample-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "task",
+      "title": "Task",
+      "type": "string",
+      "format": "label",
+      "description": "A set of structured activities performed by the participant. Corresponds to the task-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "tracksys",
+      "title": "Tracking System",
+      "type": "string",
+      "format": "label",
+      "description": "Tracking system used for motion data. Corresponds to the tracksys-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "acquisition",
+      "title": "Acquisition",
+      "type": "string",
+      "format": "label",
+      "description": "Custom label to distinguish a different set of parameters used for acquiring the same modality. Corresponds to the acq-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "nucleus",
+      "title": "Nucleus",
+      "type": "string",
+      "format": "label",
+      "description": "Nucleus or nuclei targeted by the acquisition, corresponding to DICOM Tag 0018,9100. Corresponds to the nuc-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "volume",
+      "title": "Volume of Interest",
+      "type": "string",
+      "format": "label",
+      "description": "Region or body part scanned, used to distinguish acquisitions localized to different regions. Corresponds to the voi-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "ceagent",
+      "title": "Contrast Enhancing Agent",
+      "type": "string",
+      "format": "label",
+      "description": "Contrast agent used to distinguish sequences using different contrast enhanced images. Corresponds to the ce-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "tracer",
+      "title": "Tracer",
+      "type": "string",
+      "format": "label",
+      "description": "Tracer used to distinguish sequences using different tracers. Corresponds to the trc-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "stain",
+      "title": "Stain",
+      "type": "string",
+      "format": "label",
+      "description": "Stain or antibody used for contrast enhancement in microscopy. Corresponds to the stain-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "reconstruction",
+      "title": "Reconstruction",
+      "type": "string",
+      "format": "label",
+      "description": "Reconstruction algorithm used (for example, MoCo for motion correction). Corresponds to the rec-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "direction",
+      "title": "Phase-Encoding Direction",
+      "type": "string",
+      "format": "label",
+      "description": "Phase-encoding direction used to distinguish different acquisitions (for example, AP, PA, LR, RL). Corresponds to the dir-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "run",
+      "title": "Run",
+      "type": "string",
+      "format": "index",
+      "description": "Run index distinguishing separate data acquisitions with the same parameters and entities. Nonnegative integer. Corresponds to the run-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "modality",
+      "title": "Corresponding Modality",
+      "type": "string",
+      "format": "label",
+      "description": "Modality label for defacing masks, referencing the modality of the image being defaced. Corresponds to the mod-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "echo",
+      "title": "Echo",
+      "type": "string",
+      "format": "index",
+      "description": "Echo index distinguishing files acquired at different echo times. Nonnegative integer. Corresponds to the echo-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "flip",
+      "title": "Flip Angle",
+      "type": "string",
+      "format": "index",
+      "description": "Flip angle index distinguishing files acquired at different flip angles. Nonnegative integer. Corresponds to the flip-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "inversion",
+      "title": "Inversion Time",
+      "type": "string",
+      "format": "index",
+      "description": "Inversion time index distinguishing files acquired at different inversion times. Nonnegative integer. Corresponds to the inv-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "mtransfer",
+      "title": "Magnetization Transfer",
+      "type": "string",
+      "format": "label",
+      "description": "Magnetization transfer state indicating presence or absence of an MT pulse. Corresponds to the mt-<label> entity.",
+      "constraints": {
+        "enum": ["on", "off"]
+      }
+    },
+    {
+      "name": "part",
+      "title": "Part",
+      "type": "string",
+      "format": "label",
+      "description": "Component of the complex MRI signal representation (magnitude, phase, real, or imaginary). Corresponds to the part-<label> entity.",
+      "constraints": {
+        "enum": ["mag", "phase", "real", "imag"]
+      }
+    },
+    {
+      "name": "processing",
+      "title": "Processed (on device)",
+      "type": "string",
+      "format": "label",
+      "description": "Processing variant performed on the device, analogous to rec for MR (for example, MaxFilter sss, tsss, trans). Corresponds to the proc-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "hemisphere",
+      "title": "Hemisphere",
+      "type": "string",
+      "format": "label",
+      "description": "Hemibrain described by the file. Corresponds to the hemi-<label> entity.",
+      "constraints": {
+        "enum": ["L", "R"]
+      }
+    },
+    {
+      "name": "space",
+      "title": "Space",
+      "type": "string",
+      "format": "label",
+      "description": "Coordinate system or reference image for interpreting spatial coordinates. Corresponds to the space-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "split",
+      "title": "Split",
+      "type": "string",
+      "format": "index",
+      "description": "Split index for long recordings that exceed file size limits (for example, 2GB .fif files). Nonnegative integer. Corresponds to the split-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "recording",
+      "title": "Recording",
+      "type": "string",
+      "format": "label",
+      "description": "Label distinguishing continuous recording files from different instruments, sampling frequencies, or start times. Corresponds to the recording-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "chunk",
+      "title": "Chunk",
+      "type": "string",
+      "format": "index",
+      "description": "Chunk index distinguishing images of the same physical sample with different fields of view. Nonnegative integer. Corresponds to the chunk-<index> entity.",
+      "constraints": {
+        "pattern": "^[0-9]+$"
+      }
+    },
+    {
+      "name": "segmentation",
+      "title": "Segmentation",
+      "type": "string",
+      "format": "label",
+      "description": "Custom label distinguishing specific partitions of the data space (segmentations or parcellations). Derivative data only. Corresponds to the seg-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "resolution",
+      "title": "Resolution",
+      "type": "string",
+      "format": "label",
+      "description": "Resolution of regularly sampled N-dimensional data. Derivative data only. Corresponds to the res-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "density",
+      "title": "Density",
+      "type": "string",
+      "format": "label",
+      "description": "Density of non-parametric surfaces. Derivative data only. Corresponds to the den-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "label",
+      "title": "Label",
+      "type": "string",
+      "format": "label",
+      "description": "Tissue-type label following a prescribed vocabulary, used for binary masks and probabilistic segmentations. Derivative data only. Corresponds to the label-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "description",
+      "title": "Description",
+      "type": "string",
+      "format": "label",
+      "description": "Free-form label used to distinguish two files that do not otherwise have a distinguishing entity. Derivative data only. Corresponds to the desc-<label> entity.",
+      "constraints": {
+        "pattern": "^[a-zA-Z0-9]+$"
+      }
+    },
+    {
+      "name": "suffix",
+      "title": "Suffix",
+      "type": "string",
+      "description": "BIDS file suffix indicating the imaging modality or data type (for example, bold, T1w, dwi, events).",
+      "constraints": {
+        "required": true,
+        "enum": [
+          "2PE", "ADC", "BF", "CARS", "CONF", "Chimap", "DIC", "DF", "FA",
+          "FLAIR", "FLASH", "FLUO", "IRT1", "M0map", "MEGRE", "MESE",
+          "MP2RAGE", "MPE", "MPM", "MTR", "MTRmap", "MTS", "MTVmap", "MTsat",
+          "MWFmap", "NLO", "OCT", "PC", "PD", "PDT2", "PDmap", "PDw", "PLI",
+          "R1map", "R2map", "R2starmap", "RB1COR", "RB1map", "S0map", "SEM",
+          "SPIM", "SR", "T1map", "T1rho", "T1w", "T2map", "T2star",
+          "T2starmap", "T2starw", "T2w", "TB1AFI", "TB1DAM", "TB1EPI",
+          "TB1RFM", "TB1SRGE", "TB1TFL", "TB1map", "TEM", "UNIT1", "VFA",
+          "XPCT", "angio", "asl", "aslcontext", "asllabeling", "beh", "blood",
+          "bold", "cbv", "channels", "colFA", "coordsystem", "defacemask",
+          "descriptions", "dseg", "dwi", "eeg", "electrodes", "epi", "events",
+          "expADC", "fieldmap", "headshape", "ieeg", "inplaneT1", "inplaneT2",
+          "m0scan", "magnitude", "magnitude1", "magnitude2", "markers", "mask",
+          "meg", "motion", "mrsi", "mrsref", "nirs", "noRF", "optodes", "pet",
+          "phase", "phase1", "phase2", "phasediff", "photo", "physio",
+          "probseg", "sbref", "scans", "sessions", "stim", "svs", "trace",
+          "uCT", "unloc"
+        ]
+      }
+    },
+    {
+      "name": "extension",
+      "title": "Extension",
+      "type": "string",
+      "description": "File extension including the leading dot (for example, .nii.gz, .json, .tsv).",
+      "constraints": {
+        "required": true,
+        "enum": [
+          ".ave", ".bdf", ".bval", ".bvec", ".chn", ".con", ".dat", ".ds",
+          ".dlabel.nii", ".edf", ".eeg", ".fdt", ".fif", ".jpg", ".json",
+          ".kdf", ".label.gii", ".md", ".mefd", ".mhd", ".mrk", ".ome.zarr",
+          ".nii", ".nii.gz", ".nwb", ".ome.btf", ".ome.tif", ".png", ".pos",
+          ".raw", ".rst", ".set", ".snirf", ".sqd", ".tif", ".trg", ".tsv",
+          ".tsv.gz", ".txt", ".vhdr", ".vmrk"
+        ]
+      }
+    },
+    {
+      "name": "path",
+      "title": "File Path",
+      "type": "string",
+      "description": "Full file path to the BIDS data file.",
+      "constraints": {
+        "required": true,
+        "unique": true
+      }
+    }
+  ]
+}
