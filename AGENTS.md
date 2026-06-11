@@ -12,7 +12,7 @@ for neuroimaging data. The design follows a pipeline pattern: functions accept a
 TSV string and return a processed TSV string.
 
 **Key characteristics:**
-- 807-line Bash library, functional/pipeline style
+- ~810-line Bash library, functional/pipeline style
 - AWK-based data processing for TSV filtering and column operations
 - Extensible custom entity support via JSON configurations
 - Zero-dependency core (`jq` optional, for JSON features and custom entities)
@@ -28,17 +28,17 @@ or run it directly.
 Directory tree → filename parsing → TSV table → filtering / extraction / iteration
                      ↓                   ↓
               glob patterns         AWK processing
-              (31 entities)        (column/row ops)
+              (35 entities)        (column/row ops)
 ```
 
 ### Core Parsing Flow
 
-1. **Pattern matching**: Bash extended-glob patterns match 31 standard BIDS
+1. **Pattern matching**: Bash extended-glob patterns match 35 standard BIDS
    entities (`sub`, `ses`, `task`, `run`, ...) plus suffixes and extensions.
 2. **Filename parsing**: regex-based entity extraction into associative arrays.
 3. **JSON sidecar matching**: exact filename matching only (no inheritance
    resolution).
-4. **Output**: TSV table with columns `derivatives`, `data_type`, one column per
+4. **Output**: TSV table with columns `derivatives`, `datatype`, one column per
    BIDS entity, `suffix`, `extension`, `path`.
 
 ### Pipeline (typical order)
@@ -52,29 +52,38 @@ Directory tree → filename parsing → TSV table → filtering / extraction / i
 
 ## Column Naming Convention (CRITICAL)
 
-Table columns use **FULL BIDS entity display names**, not the short keys used in
-filenames:
+BIDS nomenclature (per `schema.json`, `objects.entities`) distinguishes three things
+per entity — get these right:
 
-| filename key | column name      |
-|--------------|------------------|
-| `sub`        | `subject`        |
-| `ses`        | `session`        |
-| `acq`        | `acquisition`    |
-| `rec`        | `reconstruction` |
-| `dir`        | `direction`      |
-| `task`       | `task` (same)    |
-| `run`        | `run` (same)     |
+| concept              | schema source     | example   | used as            |
+|----------------------|-------------------|-----------|--------------------|
+| entity **key**       | `.name`           | `sub`     | filename token     |
+| entity **name**      | object key        | `subject` | **table column**   |
+| entity display name  | `.display_name`   | `Subject` | not used here      |
+
+Table columns use the entity **name** (the long form), not the entity **key** (the
+short token used in filenames):
+
+| entity key | column name (entity name) |
+|------------|---------------------------|
+| `sub`      | `subject`                 |
+| `ses`      | `session`                 |
+| `acq`      | `acquisition`             |
+| `rec`      | `reconstruction`          |
+| `dir`      | `direction`               |
+| `task`     | `task` (same)             |
+| `run`      | `run` (same)              |
 
 When passing column names to `--columns`, `--row-filter`, `--drop-na`, sort keys,
-or `libBIDSsh_table_column_to_array`, use the **column name** (e.g. `subject`).
-Passing a short key like `sub` will silently fail to match (it is neither a known
+or `libBIDSsh_table_column_to_array`, use the entity **name** (e.g. `subject`).
+Passing an entity key like `sub` will silently fail to match (it is neither a known
 column name nor a numeric index). Numeric column indices are also accepted.
 
 ### Core table structure
 
 Each row is one file. Columns:
 - `derivatives` — pipeline name if under a `derivatives/` folder, else `NA`
-- `data_type` — BIDS data type (`anat`, `func`, `dwi`, ...)
+- `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...)
 - BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...
 - `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...)
 - `extension` — file extension
@@ -218,11 +227,11 @@ matching rows instead of keeping them.
 # Enable extended globbing
 shopt -s extglob nullglob globstar
 
-# Build BIDS entity patterns (31 standard entities, defined inline in the parser)
+# Build BIDS entity patterns (35 standard entities, defined inline in the parser)
 local entities=(
   "*(_sub-+([a-zA-Z0-9]))"
-  "*(_ses-+([a-zA-Z0-9]))"
-  # ... 29 more entities
+  "*(_tpl-+([a-zA-Z0-9]))"
+  # ... 33 more entities
 )
 
 # Find files
@@ -267,7 +276,7 @@ fi
 
 ### libBIDS.sh
 
-**Purpose**: Main library containing all functionality (807 lines).
+**Purpose**: Main library containing all functionality (~810 lines).
 
 **Approximate section map** (verify with `grep -n '^libBIDSsh_\|^_libBIDSsh_' libBIDS.sh`):
 - Version check + strict mode — top of file
@@ -301,8 +310,8 @@ to activate (the parser loads every `custom/*.json`).
 {
   "entities": [
     {
-      "name": "bp",
-      "display_name": "bodypart",
+      "key": "bp",
+      "name": "bodypart",
       "pattern": "*(_bp-+([a-zA-Z0-9]))"
     }
   ]
@@ -401,8 +410,8 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 ### Adding custom entities
 
 1. Copy `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
-2. Define each entity's `name`, `display_name` (the column header), and `pattern`
-   (Bash extended-glob).
+2. Define each entity's `key` (short filename token), `name` (the column header),
+   and `pattern` (Bash extended-glob).
 3. Source the library and call `libBIDSsh_parse_bids_to_table`; custom entities are
    appended after the standard ones.
 
@@ -432,7 +441,7 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 1. **Understand BIDS** — see the [BIDS specification](https://bids-specification.readthedocs.io/).
 2. **Read README.md** — usage overview and full API reference.
 3. **Read libBIDS.sh** — inline docstrings document every function and its args.
-4. **Mind the column-naming convention** — full display names, not short keys.
+4. **Mind the column-naming convention** — entity names (e.g. `subject`), not entity keys (e.g. `sub`).
 5. **Test manually** — run against `bids-examples/` datasets to verify changes.
 6. **Check custom entities** — review `custom/custom_entities.json.tpl`.
 </content>

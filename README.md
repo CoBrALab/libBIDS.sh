@@ -52,16 +52,19 @@ table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 
 **Output columns:**
 
-The TSV columns use the full BIDS entity names (display names), not the short keys found in filenames.
+The TSV columns use the full BIDS entity **names** (e.g. `subject`), not the entity
+**keys** (the short tokens like `sub` found in filenames). In BIDS schema terms the
+key is the entity's `.name` field (`sub`) and the column header is the entity object
+name (`subject`).
 
 - `derivatives`: Pipeline name if in derivatives folder
-- `data_type`: BIDS data type (anat, func, dwi, etc.)
-- BIDS entities: `subject` (not sub), `session` (not ses), `task`, `acquisition` (not acq), `run`, etc.
+- `datatype`: BIDS datatype (anat, func, dwi, etc.)
+- BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
 - `suffix`: File suffix (bold, T1w, dwi, etc.)
 - `extension`: File extension
 - `path`: Full file path
 
-**Note:** When filtering or accessing columns, always use these full names (e.g., `subject`, `session`, `acquisition`).
+**Note:** When filtering or accessing columns, always use these entity names (e.g., `subject`, `session`, `acquisition`).
 
 ## Filtering and Subsetting
 
@@ -233,10 +236,10 @@ _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
 
 **Populated fields:**
 
-- Individual BIDS entities using short keys (`sub`, `ses`, `task`, `acq`, etc.)
+- Individual BIDS entities using entity keys (`sub`, `ses`, `task`, `acq`, etc.)
 - `suffix`: File suffix
 - `extension`: File extension
-- `data_type`: Inferred data type
+- `datatype`: Inferred datatype
 - `derivatives`: Pipeline name if applicable
 - `path`: Full path
 - `_key_order`: Order of keys for iteration
@@ -276,7 +279,7 @@ table_data=$(libBIDSsh_parse_bids_to_table "$bids_path")
 
 # Filter for functional BOLD data
 func_table=$(libBIDSsh_table_filter "$table_data" \
-  -r "data_type:func" \
+  -r "datatype:func" \
   -r "suffix:bold")
 
 # Add JSON paths
@@ -300,19 +303,19 @@ done
 
 ### Adding non-BIDS entities 
 
-If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory:
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory. Each entity object uses `key` (the short filename token), `name` (the long column header), and `pattern` (a bash extended-glob):
 
 ```json
 {
   "entities": [
     {
-      "name": "foo",
-      "display_name": "fooval",
+      "key": "foo",
+      "name": "fooval",
       "pattern": "*(_foo-+([a-zA-Z0-9]))"
     },
     {
-      "name": "bar",
-      "display_name": "baridx",
+      "key": "bar",
+      "name": "baridx",
       "pattern": "*(_bar-+([0-9]))"
     }
     ...
