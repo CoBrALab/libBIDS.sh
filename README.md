@@ -159,7 +159,7 @@ libBIDSsh_json_to_associative_array "file.json" json_data
 ```bash
 declare -A sidecar
 libBIDSsh_json_to_associative_array "bids-examples/volume_timing/sub-01/func/sub-01_task-rest_acq-dense_bold.json" sidecar
-echo "TR: ${sidecar[RepetitionTime]}"  # Output: number:2
+echo "TR: ${sidecar[RepetitionTime]}"  # Output: number:1
 ```
 
 ## Column Extraction
