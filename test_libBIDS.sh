@@ -70,6 +70,36 @@ test_parse_filename() {
   return 0
 }
 
+test_parse_filename_datatype_derivatives() {
+  # Datatype must come from the file's parent directory anchored to a whole
+  # path component, not a substring anywhere in the path.
+  declare -A a
+  _libBIDSsh_parse_filename "/data/study_func_proj/sub-01/anat/sub-01_T1w.nii.gz" a
+  assert_equals "anat" "${a[datatype]:-}" "datatype must be anat despite 'func' in path" || return 1
+
+  declare -A b
+  _libBIDSsh_parse_filename "/data/sub-01/emg/sub-01_task-rest_emg.edf" b
+  assert_equals "emg" "${b[datatype]:-}" "emg datatype should be detected" || return 1
+
+  # No datatype directory -> NA
+  declare -A c
+  _libBIDSsh_parse_filename "/data/sub-01/sub-01_scans.tsv" c
+  assert_equals "NA" "${c[datatype]:-}" "missing datatype dir should be NA" || return 1
+
+  # Derivatives pipeline is the component right after 'derivatives/'.
+  declare -A d
+  _libBIDSsh_parse_filename "/data/derivatives/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz" d
+  assert_equals "fmriprep" "${d[derivatives]:-}" "derivatives pipeline should be fmriprep" || return 1
+  assert_equals "anat" "${d[datatype]:-}" "derivative datatype should be anat" || return 1
+
+  # A directory merely containing the word 'derivatives' must not match.
+  declare -A e
+  _libBIDSsh_parse_filename "/data/myderivatives/sub-01/anat/sub-01_T1w.nii.gz" e
+  assert_equals "NA" "${e[derivatives]:-}" "'myderivatives' must not be treated as derivatives" || return 1
+
+  return 0
+}
+
 test_parse_bids_to_table() {
   local bids_dir="bids-examples/ds001"
   local table
@@ -210,6 +240,7 @@ echo "Starting libBIDS.sh test suite..."
 echo "---"
 
 run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
+run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_drop_na_columns" test_drop_na_columns

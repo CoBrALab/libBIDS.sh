@@ -53,5 +53,5 @@ printf '@(%s)\n' "$(jq -r '.objects.extensions[].value' schema.json \
   | paste -sd'|')"
 
 echo
-echo "### datatype regex (for _libBIDSsh_parse_filename) ###"
-printf '(%s)\n' "$(jq -r '.objects.datatypes | keys[]' schema.json | paste -sd'|')"
+echo "### datatype regex (anchored to a whole path component; for _libBIDSsh_parse_filename) ###"
+printf '(^|/)(%s)$\n' "$(jq -r '.objects.datatypes | keys[]' schema.json | paste -sd'|')"
