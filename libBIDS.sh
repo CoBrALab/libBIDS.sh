@@ -17,7 +17,7 @@ libBIDSsh_table_filter() {
   #   -d, --drop-na <list>      Comma-separated list of columns to check for NA values
   # Returns: Filtered TSV data through stdout
   # Example:
-  #   filtered=$(libBIDSsh_table_filter "$data" -c "sub,ses" -r "task:rest" -d "run")
+  #   filtered=$(libBIDSsh_table_filter "$data" -c "subject,session" -r "task:rest" -d "run")
   local table_data="$1"
   shift
 
@@ -247,8 +247,8 @@ _libBIDSsh_parse_filename() {
   arr[path]=$(tr -s / <<<"${path}")
   arr[extension]="${filename#*.}"
   # Extract from schema
-  # jq -r .objects.datatypes.[].value schema.json  | paste -s -d'|'
-  arr[data_type]=$(grep -o -E "(anat|beh|dwi|eeg|fmap|func|ieeg|meg|micr|motion|mrs|perf|pet|phenotype|nirs)" <<<"$(dirname "${path}")" | head -1 || echo "NA")
+  # ./generate_entity_patterns.sh -> datatype regex
+  arr[datatype]=$(grep -o -E "(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)" <<<"$(dirname "${path}")" | head -1 || echo "NA")
   arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
 
   local name_no_ext="${filename%%.*}"
@@ -273,7 +273,7 @@ _libBIDSsh_parse_filename() {
 
   key_order+=("suffix")
   key_order+=("extension")
-  key_order+=("data_type")
+  key_order+=("datatype")
   key_order+=("derivatives")
   key_order+=("path")
 
@@ -366,8 +366,8 @@ _libBIDSsh_load_custom_entities() {
   # Load custom entities from JSON configuration files
   # JSON files should be placed in ./custom directory
   # Each JSON file should contain an "entities" array with objects having:
-  #   - name: entity short name
-  #   - display_name: entity display name for table headers
+  #   - key: entity key, the short filename token (e.g. "bp")
+  #   - name: entity name, the long table column header (e.g. "bodypart")
   #   - pattern: bash glob pattern for matching
 
   local script_dir
@@ -383,14 +383,14 @@ _libBIDSsh_load_custom_entities() {
     declare -gA CUSTOM_ENTITIES
   fi
   CUSTOM_ENTITIES=()
+  if [[ -z "${CUSTOM_ENTITY_KEYS+x}" ]]; then
+    declare -ga CUSTOM_ENTITY_KEYS
+  fi
+  CUSTOM_ENTITY_KEYS=()
   if [[ -z "${CUSTOM_ENTITY_NAMES+x}" ]]; then
     declare -ga CUSTOM_ENTITY_NAMES
   fi
   CUSTOM_ENTITY_NAMES=()
-  if [[ -z "${CUSTOM_ENTITY_DISPLAY_NAMES+x}" ]]; then
-    declare -ga CUSTOM_ENTITY_DISPLAY_NAMES
-  fi
-  CUSTOM_ENTITY_DISPLAY_NAMES=()
 
   if [[ ! -d "$plugin_dir" ]]; then
     return 0
@@ -413,14 +413,14 @@ _libBIDSsh_load_custom_entities() {
   for json_file in "${json_files[@]}"; do
     if [[ -f "$json_file" ]]; then
       # Parse JSON and extract entity definitions
-      while IFS=';' read -r name display_name pattern; do
-        if [[ -n "$name" && -n "$display_name" && -n "$pattern" ]]; then
-          CUSTOM_ENTITIES["$name"]="$pattern"
+      while IFS=';' read -r key name pattern; do
+        if [[ -n "$key" && -n "$name" && -n "$pattern" ]]; then
+          CUSTOM_ENTITIES["$key"]="$pattern"
+          CUSTOM_ENTITY_KEYS+=("$key")
           CUSTOM_ENTITY_NAMES+=("$name")
-          CUSTOM_ENTITY_DISPLAY_NAMES+=("$display_name")
         fi
       done < <(
-        jq -r '.entities[] | "\(.name);\(.display_name);\(.pattern)"' \
+        jq -r '.entities[] | "\(.key);\(.name);\(.pattern)"' \
           "$json_file" 2>/dev/null
       )
     fi
@@ -450,7 +450,9 @@ libBIDSsh_parse_bids_to_table() {
   # Extracted from schema with generate_entity_patterns.sh
   local entities=(
     "*(_sub-+([a-zA-Z0-9]))"
+    "*(_tpl-+([a-zA-Z0-9]))"
     "*(_ses-+([a-zA-Z0-9]))"
+    "*(_cohort-+([a-zA-Z0-9]))"
     "*(_sample-+([a-zA-Z0-9]))"
     "*(_task-+([a-zA-Z0-9]))"
     "*(_tracksys-+([a-zA-Z0-9]))"
@@ -475,7 +477,9 @@ libBIDSsh_parse_bids_to_table() {
     "*(_split-+([0-9]))"
     "*(_recording-+([a-zA-Z0-9]))"
     "*(_chunk-+([0-9]))"
+    "*(_atlas-+([a-zA-Z0-9]))"
     "*(_seg-+([a-zA-Z0-9]))"
+    "*(_scale-+([a-zA-Z0-9]))"
     "*(_res-+([a-zA-Z0-9]))"
     "*(_den-+([a-zA-Z0-9]))"
     "*(_label-+([a-zA-Z0-9]))"
@@ -489,7 +493,7 @@ libBIDSsh_parse_bids_to_table() {
 
   # Suffixes from schema.json
   # jq -r .objects.suffixes.[].value schema.json | paste -s -d'|'
-  local suffixes="_@(2PE|ADC|BF|Chimap|CARS|CONF|DIC|DF|FA|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|colFA|coordsystem|defacemask|descriptions|dseg|dwi|eeg|electrodes|epi|events|expADC|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|probseg|sbref|scans|sessions|stim|svs|trace|uCT|unloc)"
+  local suffixes="_@(2PE|ADC|BF|Chimap|CARS|CONF|DIC|DF|FA|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|colFA|coordsystem|defacemask|description|descriptions|dseg|dwi|eeg|electrodes|emg|epi|events|expADC|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|physioevents|probseg|sbref|scans|sessions|stim|svs|trace|uCT|unloc)"
 
   # Allowed extensions
   # jq -r .objects.extensions.[].value schema.json | paste -s -d'|'
@@ -515,24 +519,26 @@ libBIDSsh_parse_bids_to_table() {
   shopt -u nullglob
   shopt -u globstar
 
-  # Order of entities from generate_entity_patterns.sh
-  entities_displayname_order=$'subject\tsession\tsample\ttask\ttracksys\tacquisition\tnucleus\tvolume\tceagent\ttracer\tstain\treconstruction\tdirection\trun\tmodality\techo\tflip\tinversion\tmtransfer\tpart\tprocessing\themisphere\tspace\tsplit\trecording\tchunk\tsegmentation\tresolution\tdensity\tlabel\tdescription'
-  entities_order="sub ses sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk seg res den label desc"
+  # Order of entities from generate_entity_patterns.sh.
+  # entities_order holds entity keys (filename tokens); entities_name_order holds
+  # entity names (the long, canonical column headers). Both in canonical BIDS order.
+  entities_name_order=$'subject\ttemplate\tsession\tcohort\tsample\ttask\ttracksys\tacquisition\tnucleus\tvolume\tceagent\ttracer\tstain\treconstruction\tdirection\trun\tmodality\techo\tflip\tinversion\tmtransfer\tpart\tprocessing\themisphere\tspace\tsplit\trecording\tchunk\tatlas\tsegmentation\tscale\tresolution\tdensity\tlabel\tdescription'
+  entities_order="sub tpl ses cohort sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk atlas seg scale res den label desc"
 
   # Add custom entities to ordering
+  for entity_key in "${CUSTOM_ENTITY_KEYS[@]}"; do
+    entities_order+=" $entity_key"
+  done
+
   for entity_name in "${CUSTOM_ENTITY_NAMES[@]}"; do
-    entities_order+=" $entity_name"
+    entities_name_order+=$'\t'"$entity_name"
   done
 
-  for entity_display in "${CUSTOM_ENTITY_DISPLAY_NAMES[@]}"; do
-    entities_displayname_order+=$'\t'"$entity_display"
-  done
-
-  printf "derivatives\tdata_type\t%s\tsuffix\textension\tpath\n" "${entities_displayname_order}"
+  printf "derivatives\tdatatype\t%s\tsuffix\textension\tpath\n" "${entities_name_order}"
   for file in "${files[@]}"; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
-    for key in derivatives data_type ${entities_order} suffix extension path; do
+    for key in derivatives datatype ${entities_order} suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
         printf '%s\t' "${file_info[${key}]}"
       else
@@ -554,7 +560,7 @@ libBIDSsh_table_column_to_array() {
   #   exclude_NA: (optional) "true" to exclude NA values (default: true)
   # Example:
   #   declare -a subjects
-  #   libBIDSsh_table_column_to_array "$data" "sub" subjects true true
+  #   libBIDSsh_table_column_to_array "$data" "subject" subjects true true
   local table_data="$1"
   local column="$2"
   local -n array_ref="$3" # nameref to the array variable
@@ -621,8 +627,8 @@ libBIDSsh_table_iterator() {
   # Returns: 0 for success (more rows), 1 when done
   # Example:
   #   declare -A row
-  #   while libBIDSsh_table_iterator "$data" row "sub" "ses" "-r"; do
-  #     echo "Processing subject ${row[sub]} session ${row[ses]}"
+  #   while libBIDSsh_table_iterator "$data" row "subject" "session" "-r"; do
+  #     echo "Processing subject ${row[subject]} session ${row[session]}"
   #   done
   local table_var="${1:-}" # Name of the variable containing table data
   if [[ -z "${2:-}" ]]; then
