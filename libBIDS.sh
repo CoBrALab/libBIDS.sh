@@ -245,11 +245,28 @@ _libBIDSsh_parse_filename() {
 
   # Store the full path and filename
   arr[path]=$(tr -s / <<<"${path}")
+
   arr[extension]="${filename#*.}"
-  # Extract from schema
+
+  # Datatype is the BIDS datatype directory directly containing the file (the
+  # final component of the file's directory). Anchor to a whole path component
+  # so an unrelated substring (e.g. "func" in "study_func/") cannot match.
   # ./generate_entity_patterns.sh -> datatype regex
-  arr[datatype]=$(grep -o -E "(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)" <<<"$(dirname "${path}")" | head -1 || echo "NA")
-  arr[derivatives]=$(grep -o 'derivatives/.*/' <<<"${path}" | awk -F/ '{print $2}' || echo "NA")
+  local dir
+  dir=$(dirname "${path}")
+  if [[ ${dir} =~ (^|/)(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)$ ]]; then
+    arr[datatype]="${BASH_REMATCH[2]}"
+  else
+    arr[datatype]="NA"
+  fi
+
+  # Derivatives pipeline name is the path component immediately following a
+  # "derivatives/" directory; NA when the file is not under one.
+  if [[ ${path} =~ (^|/)derivatives/([^/]+)/ ]]; then
+    arr[derivatives]="${BASH_REMATCH[2]}"
+  else
+    arr[derivatives]="NA"
+  fi
 
   local name_no_ext="${filename%%.*}"
 
