@@ -50,6 +50,14 @@ Parses a directory tree, identifies BIDS files, extracts BIDS entities, and outp
 table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 ```
 
+**Options:**
+
+- `--no-bidsignore`: Do not honor the dataset's `.bidsignore` file or the built-in default ignores (parse every BIDS-shaped file).
+- `--no-default-ignores`: Honor the dataset's `.bidsignore` but skip the built-in default ignores (`sourcedata/`, `code/`, `stimuli/`, `log/`, dotfiles, `.git`).
+
+By default the parser honors a root-level `.bidsignore` and the built-in default
+ignores (see [`.bidsignore` support](#bidsignore-support) below).
+
 **Output columns:**
 
 The TSV columns use the full BIDS entity **names** (e.g. `subject`), not the entity
@@ -116,6 +124,59 @@ cleaned=$(libBIDSsh_drop_na_columns "$table_data")
 # Remove empty columns from dataset
 table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 cleaned=$(libBIDSsh_drop_na_columns "$table_data")
+```
+
+## `.bidsignore` support
+
+A BIDS dataset may carry a root-level [`.bidsignore`](https://bids-specification.readthedocs.io/en/stable/derivatives/introduction.html#bidsignore)
+file listing **gitignore-style patterns** for files that are not part of the BIDS
+standard. `libBIDSsh_parse_bids_to_table` honors it by default and also applies a
+built-in list of default ignores, matching the behavior of `bids-validator`.
+
+**Built-in default ignores:** `.git**`, `.*` (dotfiles), `sourcedata/`, `code/`,
+`stimuli/`, `log/`. Note that `derivatives/` is intentionally **not** ignored —
+libBIDS.sh treats derivatives as first-class data.
+
+**Supported gitignore syntax:** blank lines and `#` comments; `*` and `?` (which do
+not cross `/`); `**` whole-segment globstar (crosses directories); `[...]` bracket
+expressions; `\`-escapes; leading/embedded `/` to anchor a pattern to the dataset
+root; trailing `/` for directory-only matches; and `!` negation (re-include) with
+last-match-wins ordering.
+
+**Limitations:** only the root-level `.bidsignore` is read (no inheritance / nested
+files, matching `bids-validator`). Because the parser only ever globs files whose
+suffix and extension are valid BIDS tokens, `.bidsignore` patterns that target
+non-BIDS files (e.g. `*.html`) are effectively no-ops — the parser never picked
+those files up. `.bidsignore` becomes meaningful for BIDS-shaped files an author
+explicitly excludes (e.g. `**/sub-*_..._FLASH.nii.gz`).
+
+```bash
+# Honor .bidsignore + defaults (the default behavior)
+table_data=$(libBIDSsh_parse_bids_to_table "path/to/dataset")
+
+# Parse everything, ignoring .bidsignore entirely
+raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "path/to/dataset")
+
+# Honor .bidsignore but keep sourcedata/, code/, etc.
+table_data=$(libBIDSsh_parse_bids_to_table --no-default-ignores "path/to/dataset")
+```
+
+### `libBIDSsh_apply_bidsignore`
+
+Applies a dataset's `.bidsignore` (and, by default, the built-in default ignores) to
+an already-parsed table, dropping rows whose file is excluded. Useful for filtering
+a table that was parsed with `--no-bidsignore`, or one obtained from another source.
+
+```bash
+filtered=$(libBIDSsh_apply_bidsignore "$table_data" "path/to/dataset" [--no-default-ignores])
+```
+
+**Example:**
+
+```bash
+raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "path/to/dataset")
+# ... inspect or process the unfiltered table ...
+filtered=$(libBIDSsh_apply_bidsignore "$raw" "path/to/dataset")
 ```
 
 ## JSON Processing

@@ -43,12 +43,14 @@ Directory tree → filename parsing → TSV table → filtering / extraction / i
 
 ### Pipeline (typical order)
 
-1. **Parse**: `libBIDSsh_parse_bids_to_table` — BIDS directory → TSV
-2. *(optional)* `libBIDSsh_extension_json_rows_to_column_json_path` — link JSON sidecars
-3. *(optional)* `libBIDSsh_drop_na_columns` — remove all-NA columns
-4. **Filter**: `libBIDSsh_table_filter` — keep columns / filter rows / drop NA
-5. **Extract**: `libBIDSsh_table_column_to_array` — column → Bash array
-6. **Iterate**: `libBIDSsh_table_iterator` — row-by-row with sorting
+1. **Parse**: `libBIDSsh_parse_bids_to_table` — BIDS directory → TSV (honors
+   `.bidsignore` by default; `--no-bidsignore` / `--no-default-ignores` to opt out)
+2. *(optional)* `libBIDSsh_apply_bidsignore` — drop rows excluded by `.bidsignore`
+3. *(optional)* `libBIDSsh_extension_json_rows_to_column_json_path` — link JSON sidecars
+4. *(optional)* `libBIDSsh_drop_na_columns` — remove all-NA columns
+5. **Filter**: `libBIDSsh_table_filter` — keep columns / filter rows / drop NA
+6. **Extract**: `libBIDSsh_table_column_to_array` — column → Bash array
+7. **Iterate**: `libBIDSsh_table_iterator` — row-by-row with sorting
 
 ## Column Naming Convention (CRITICAL)
 
@@ -90,20 +92,25 @@ Each row is one file. Columns:
 - `path` — full file path
 - *(optional)* `json_path` — added by `..._json_rows_to_column_json_path`
 
-### Public API (7 functions)
+### Public API (8 functions)
 
-- `libBIDSsh_parse_bids_to_table` — core BIDS parser, main entry point
+- `libBIDSsh_parse_bids_to_table` — core BIDS parser, main entry point (honors
+  `.bidsignore` by default; `--no-bidsignore` / `--no-default-ignores` flags)
 - `libBIDSsh_table_filter` — AWK-based TSV filtering (columns, rows, drop-na, invert)
 - `libBIDSsh_drop_na_columns` — remove columns whose values are all `NA`
+- `libBIDSsh_apply_bidsignore` — drop rows excluded by a dataset's `.bidsignore`
 - `libBIDSsh_extension_json_rows_to_column_json_path` — fold JSON sidecar rows into a `json_path` column
 - `libBIDSsh_table_column_to_array` — TSV column → Bash array
 - `libBIDSsh_table_iterator` — iterate TSV rows into an associative array, with sorting
 - `libBIDSsh_json_to_associative_array` — parse a JSON file into a Bash associative array
 
-### Internal Functions (2)
+### Internal Functions (5)
 
 - `_libBIDSsh_parse_filename` — regex-based entity extraction from a filename
 - `_libBIDSsh_load_custom_entities` — load custom entity definitions from `custom/*.json`
+- `_libBIDSsh_compile_bidsignore_line` — compile one gitignore-style pattern to an anchored ERE
+- `_libBIDSsh_compile_bidsignore` — compile default ignores + root `.bidsignore` into match arrays
+- `_libBIDSsh_path_is_ignored` — test a dataset-relative path against the compiled patterns (last-match-wins)
 
 ## Key Directories
 
@@ -435,6 +442,12 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 3. **JSON sidecars** — `..._json_rows_to_column_json_path` matches only a JSON file
    with the exact same name (different extension); no inheritance hierarchy resolution.
 4. **Malformed custom entities** — can cause runtime errors.
+5. **`.bidsignore`** — only the **root-level** `.bidsignore` is read (no inheritance /
+   nested files, matching `bids-validator`). Negation (`!`) does not specially block
+   re-including a file under an already-excluded parent directory — each file's full
+   relative path is tested independently. Escaped trailing whitespace (`\ `) is the
+   one gitignore corner not fully honored. Because the parser only globs valid-BIDS
+   suffix+extension files, `.bidsignore` patterns targeting non-BIDS files are no-ops.
 
 ## Start Here (for AI assistants)
 
