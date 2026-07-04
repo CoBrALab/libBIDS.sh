@@ -707,6 +707,19 @@ libBIDSsh_parse_bids_to_table() {
       --no-bidsignore) honor_bidsignore=0; shift ;;
       --default-ignores) use_defaults=1; shift ;;
       --no-default-ignores) use_defaults=0; shift ;;
+      --)
+        # End of options: everything after is positional (allows a path like "-x").
+        shift
+        while [[ $# -gt 0 ]]; do
+          if [[ -z "$bidspath" ]]; then
+            bidspath="$1"
+          else
+            echo "Error: unexpected extra argument '$1'" >&2
+            return 1
+          fi
+          shift
+        done
+        ;;
       -*) echo "Unknown option: $1" >&2; return 1 ;;
       *)
         if [[ -z "$bidspath" ]]; then

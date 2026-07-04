@@ -260,8 +260,8 @@ _make_bidsignore_fixture() {
   printf '%s' "$root"
 }
 
-# Count data rows (all lines after the header).
-_row_count() { tail -n +2 <<<"$1" | grep -c .; }
+# Count data rows (all non-empty lines after the header).
+_row_count() { awk 'NR > 1 && $0 != "" { c++ } END { print c + 0 }' <<<"$1"; }
 
 test_bidsignore_matcher() {
   local root
