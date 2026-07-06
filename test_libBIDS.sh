@@ -236,6 +236,103 @@ test_json_to_associative_array() {
   return 0
 }
 
+# Build a small self-contained BIDS-shaped fixture with a .bidsignore.
+# Echoes the temp directory path; caller is responsible for removing it.
+_make_bidsignore_fixture() {
+  local root
+  root=$(mktemp -d)
+  local files=(
+    "sub-01/func/sub-01_task-rest_bold.nii.gz"
+    "sub-02/func/sub-02_task-rest_bold.nii.gz"
+    "sub-01/anat/sub-01_T1w.nii.gz"
+    "sub-01/anat/sub-01_FLASH.nii.gz"
+    "sourcedata/sub-01/anat/sub-01_T1w.nii.gz"
+    "code/sub-01_T1w.nii.gz"
+    "derivatives/junk/sub-01_desc-x_T1w.nii.gz"
+  )
+  local f
+  for f in "${files[@]}"; do
+    mkdir -p "${root}/$(dirname "$f")"
+    : >"${root}/${f}"
+  done
+  printf '%s\n' '*_FLASH.nii.gz' '*_bold.nii.gz' '!sub-01_task-rest_bold.nii.gz' \
+    >"${root}/.bidsignore"
+  printf '%s' "$root"
+}
+
+# Count data rows (all non-empty lines after the header).
+_row_count() { awk 'NR > 1 && $0 != "" { c++ } END { print c + 0 }' <<<"$1"; }
+
+test_bidsignore_matcher() {
+  local root
+  root=$(mktemp -d)
+  printf '%s\n' '*_bold.nii.gz' '!sub-01_task-rest_bold.nii.gz' 'derivatives/junk/' \
+    'a/b/anchored.nii.gz' '**/deep_FLASH.nii.gz' >"${root}/.bidsignore"
+  _libBIDSsh_compile_bidsignore "$root" 1
+
+  local rc=0
+  _chk() { # path expected(0=ignored,1=kept) msg
+    if _libBIDSsh_path_is_ignored "$1"; then local got=0; else local got=1; fi
+    assert_equals "$2" "$got" "$3" || rc=1
+  }
+  _chk "sub-02/func/sub-02_task-rest_bold.nii.gz" 0 "basename glob ignores bold" # ignored
+  _chk "sub-01/func/sub-01_task-rest_bold.nii.gz" 1 "negation re-includes bold"  # kept
+  _chk "code/script.py" 0 "default ignore: code/"                                # ignored
+  _chk "sourcedata/x/y_bold.nii.gz" 0 "default ignore: sourcedata/"              # ignored
+  _chk "derivatives/junk/sub-01_T1w.nii.gz" 0 "directory pattern ignores subtree" # ignored
+  _chk "derivatives/keep/sub-01_T1w.nii.gz" 1 "derivatives not ignored by default" # kept
+  _chk "a/b/anchored.nii.gz" 0 "anchored path matches at root"                   # ignored
+  _chk "x/a/b/anchored.nii.gz" 1 "anchored path does not match at depth"         # kept
+  _chk "sub-01/anat/deep_FLASH.nii.gz" 0 "globstar matches across dirs"          # ignored
+  _chk ".git/config" 0 "default ignore: .git**"                                  # ignored
+
+  rm -rf "$root"
+  return $rc
+}
+
+test_bidsignore_parser() {
+  local root
+  root=$(_make_bidsignore_fixture)
+
+  local default raw nodefault
+  default=$(libBIDSsh_parse_bids_to_table "$root")
+  raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "$root")
+  nodefault=$(libBIDSsh_parse_bids_to_table --no-default-ignores "$root")
+
+  local rc=0
+  assert_equals "7" "$(_row_count "$raw")" "--no-bidsignore keeps all 7 files" || rc=1
+  assert_equals "3" "$(_row_count "$default")" "default drops FLASH/bold/sourcedata/code" || rc=1
+  assert_equals "5" "$(_row_count "$nodefault")" "--no-default-ignores keeps sourcedata+code" || rc=1
+
+  # FLASH always dropped when honoring; sourcedata dropped only by defaults.
+  [[ "$default" != *FLASH* ]] || { echo "    FLASH not dropped in default"; rc=1; }
+  [[ "$nodefault" != *FLASH* ]] || { echo "    FLASH not dropped in --no-default-ignores"; rc=1; }
+  [[ "$nodefault" == *sourcedata* ]] || { echo "    sourcedata missing in --no-default-ignores"; rc=1; }
+  [[ "$default" != *sourcedata* ]] || { echo "    sourcedata not dropped by defaults"; rc=1; }
+  # Negation keeps sub-01 rest bold but not sub-02.
+  [[ "$default" == *"sub-01_task-rest_bold"* ]] || { echo "    negated bold missing"; rc=1; }
+  [[ "$default" != *"sub-02_task-rest_bold"* ]] || { echo "    sub-02 bold not dropped"; rc=1; }
+
+  rm -rf "$root"
+  return $rc
+}
+
+test_apply_bidsignore() {
+  local root
+  root=$(_make_bidsignore_fixture)
+
+  local default raw applied
+  default=$(libBIDSsh_parse_bids_to_table "$root")
+  raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "$root")
+  applied=$(libBIDSsh_apply_bidsignore "$raw" "$root")
+
+  local rc=0
+  assert_equals "$default" "$applied" "apply_bidsignore matches parser default" || rc=1
+
+  rm -rf "$root"
+  return $rc
+}
+
 echo "Starting libBIDS.sh test suite..."
 echo "---"
 
@@ -248,6 +345,9 @@ run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_ex
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
+run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
+run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
+run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore
 
 echo "---"
 echo "Test summary:"

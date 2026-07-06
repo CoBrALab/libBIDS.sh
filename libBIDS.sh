@@ -445,13 +445,293 @@ _libBIDSsh_load_custom_entities() {
   shopt -u nullglob
 }
 
+# shellcheck disable=SC2154
+_libBIDSsh_compile_bidsignore_line() {
+  # Compile one gitignore-style pattern into an anchored ERE and append it to the
+  # module-level _LIBBIDSSH_BIDSIGNORE_REGEX / _LIBBIDSSH_BIDSIGNORE_NEG arrays.
+  # Blank lines and comments are skipped. Implements the gitignore subset:
+  #   - leading '!'        -> negation (re-include), recorded in the NEG array
+  #   - leading/embedded / -> anchored to the dataset root
+  #   - trailing /         -> directory-only match
+  #   - '**' as a whole path segment spans directories; '*' and '?' do not
+  #   - '[...]' bracket expressions and '\'-escapes are passed through
+  # Usage: _libBIDSsh_compile_bidsignore_line "<pattern>"
+  local line="$1"
+
+  # Strip a trailing carriage return (CRLF files).
+  line="${line%$'\r'}"
+  [[ -z "$line" ]] && return 0
+
+  # Strip unescaped trailing whitespace (an escaped '\ ' trailing space is kept).
+  while [[ "$line" == *[[:space:]] && "$line" != *'\'[[:space:]] ]]; do
+    line="${line%?}"
+  done
+  [[ -z "$line" ]] && return 0
+
+  # Escapes, comments and negation at the start of the pattern.
+  local negated=0
+  case "$line" in
+    '\#'* | '\!'*) line="${line#\\}" ;; # literal leading '#' or '!'
+    '#'*) return 0 ;;                    # comment
+    '!'*)
+      negated=1
+      line="${line#!}"
+      ;;
+  esac
+  [[ -z "$line" ]] && return 0
+
+  # Trailing slash => directory-only match.
+  local dir_only=0
+  if [[ "$line" == */ ]]; then
+    dir_only=1
+    line="${line%/}"
+  fi
+  [[ -z "$line" ]] && return 0
+
+  # A '/' at the start or middle anchors the pattern to the dataset root.
+  local anchored=0
+  if [[ "$line" == /* ]]; then
+    anchored=1
+    line="${line#/}"
+  elif [[ "$line" == */* ]]; then
+    anchored=1
+  fi
+  [[ -z "$line" ]] && return 0
+
+  # Translate the glob body into an ERE, character by character.
+  local core="" i=0 n=${#line} c nc
+  while ((i < n)); do
+    c="${line:i:1}"
+    if [[ "$c" == '\' ]]; then
+      # Backslash escapes the next character -> emit it literally.
+      nc="${line:i+1:1}"
+      if [[ -n "$nc" ]]; then
+        case "$nc" in
+          '.' | '^' | '$' | '+' | '(' | ')' | '{' | '}' | '|' | '[' | ']' | '*' | '?' | '\')
+            core+="\\$nc" ;;
+          *) core+="$nc" ;;
+        esac
+        i=$((i + 2))
+      else
+        core+='\\'
+        i=$((i + 1))
+      fi
+      continue
+    fi
+    if [[ "$c" == '*' ]]; then
+      if [[ "${line:i+1:1}" == '*' ]]; then
+        # A '**' that forms a whole path segment spans directories.
+        local prev_ok=0 next_ok=0
+        { ((i == 0)) || [[ "${line:i-1:1}" == '/' ]]; } && prev_ok=1
+        { ((i + 2 == n)) || [[ "${line:i+2:1}" == '/' ]]; } && next_ok=1
+        if ((prev_ok && next_ok)); then
+          if ((i + 2 == n)); then
+            core+='.*' # trailing '**' matches everything below
+            i=$((i + 2))
+          else
+            core+='(.*/)?' # '**/' matches zero or more directories
+            i=$((i + 3))   # also consume the following '/'
+          fi
+          continue
+        fi
+      fi
+      core+='[^/]*' # single '*' does not cross directory separators
+      i=$((i + 1))
+      continue
+    fi
+    if [[ "$c" == '?' ]]; then
+      core+='[^/]'
+      i=$((i + 1))
+      continue
+    fi
+    if [[ "$c" == '[' ]]; then
+      # Copy a bracket expression through, translating a leading '!' to '^'.
+      local j=$((i + 1)) bracket='['
+      if [[ "${line:j:1}" == '!' || "${line:j:1}" == '^' ]]; then
+        bracket+='^'
+        j=$((j + 1))
+      fi
+      [[ "${line:j:1}" == ']' ]] && {
+        bracket+=']'
+        j=$((j + 1))
+      }
+      while ((j < n)) && [[ "${line:j:1}" != ']' ]]; do
+        bracket+="${line:j:1}"
+        j=$((j + 1))
+      done
+      if ((j < n)); then
+        core+="${bracket}]"
+        i=$((j + 1))
+      else
+        core+='\[' # no closing ']': treat '[' literally
+        i=$((i + 1))
+      fi
+      continue
+    fi
+    # Literal character: escape ERE metacharacters.
+    case "$c" in
+      '.' | '^' | '$' | '+' | '(' | ')' | '{' | '}' | '|' | '\') core+="\\$c" ;;
+      *) core+="$c" ;;
+    esac
+    i=$((i + 1))
+  done
+
+  local start end
+  if ((anchored)); then start='^'; else start='(^|.*/)'; fi
+  if ((dir_only)); then end='/'; else end='(/|$)'; fi
+
+  _LIBBIDSSH_BIDSIGNORE_REGEX+=("${start}${core}${end}")
+  _LIBBIDSSH_BIDSIGNORE_NEG+=("$negated")
+}
+
+_libBIDSsh_compile_bidsignore() {
+  # Compile the built-in default ignores plus a dataset's root .bidsignore into the
+  # module-level _LIBBIDSSH_BIDSIGNORE_REGEX / _LIBBIDSSH_BIDSIGNORE_NEG arrays, in
+  # match order. Safe to call repeatedly (arrays are reset each time). Only the
+  # root-level .bidsignore is read (no inheritance), matching bids-validator.
+  # Usage: _libBIDSsh_compile_bidsignore "<bidspath>" [use_defaults=1]
+  local bidspath="$1"
+  local use_defaults="${2:-1}"
+
+  _LIBBIDSSH_BIDSIGNORE_REGEX=()
+  _LIBBIDSSH_BIDSIGNORE_NEG=()
+
+  # Built-in defaults, mirroring bids-validator's addDefaults list. Note that
+  # derivatives/ is intentionally NOT ignored (libBIDS treats it as first-class).
+  if [[ "$use_defaults" == "1" ]]; then
+    local default_pattern
+    for default_pattern in '.git**' '.*' 'sourcedata/' 'code/' 'stimuli/' 'log/'; do
+      _libBIDSsh_compile_bidsignore_line "$default_pattern"
+    done
+  fi
+
+  local ignore_file="${bidspath%/}/.bidsignore"
+  if [[ -f "$ignore_file" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      _libBIDSsh_compile_bidsignore_line "$line"
+    done <"$ignore_file"
+  fi
+}
+
+_libBIDSsh_path_is_ignored() {
+  # Test a dataset-root-relative path against the compiled .bidsignore patterns.
+  # Returns 0 if the path is ignored, 1 otherwise. Last matching pattern wins, so
+  # a later negation ('!') re-includes a path excluded by an earlier pattern.
+  # Usage: _libBIDSsh_path_is_ignored "<relative/path>"
+  local relpath="$1"
+  local is_ignored=0 idx regex
+  for ((idx = 0; idx < ${#_LIBBIDSSH_BIDSIGNORE_REGEX[@]}; idx++)); do
+    regex="${_LIBBIDSSH_BIDSIGNORE_REGEX[idx]}"
+    if [[ "$relpath" =~ $regex ]]; then
+      if [[ "${_LIBBIDSSH_BIDSIGNORE_NEG[idx]}" == "1" ]]; then
+        is_ignored=0
+      else
+        is_ignored=1
+      fi
+    fi
+  done
+  ((is_ignored)) && return 0
+  return 1
+}
+
+libBIDSsh_apply_bidsignore() {
+  # Drop rows whose file is excluded by a dataset's .bidsignore (and, by default,
+  # the built-in default ignores). Pipeline-style: TSV in -> filtered TSV out.
+  # Usage: libBIDSsh_apply_bidsignore "${table_data}" "<bidspath>" [--no-default-ignores]
+  # Example:
+  #   table=$(libBIDSsh_apply_bidsignore "$table" path/to/dataset)
+  local table_data="$1"
+  local bidspath="$2"
+  shift 2
+  local use_defaults=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --default-ignores) use_defaults=1; shift ;;
+      --no-default-ignores) use_defaults=0; shift ;;
+      *) echo "Unknown option: $1" >&2; return 1 ;;
+    esac
+  done
+
+  _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
+
+  local norm_bidspath
+  norm_bidspath=$(tr -s / <<<"${bidspath%/}")
+
+  local line lineno=0 path_idx=-1
+  while IFS= read -r line; do
+    lineno=$((lineno + 1))
+    if ((lineno == 1)); then
+      local -a hcols
+      IFS=$'\t' read -r -a hcols <<<"$line"
+      local hi
+      for hi in "${!hcols[@]}"; do
+        [[ "${hcols[hi]}" == "path" ]] && {
+          path_idx=$hi
+          break
+        }
+      done
+      if ((path_idx < 0)); then
+        echo "Error: no 'path' column in table data" >&2
+        return 1
+      fi
+      printf '%s\n' "$line"
+      continue
+    fi
+    local -a cols
+    IFS=$'\t' read -r -a cols <<<"$line"
+    local norm_p relpath
+    norm_p=$(tr -s / <<<"${cols[path_idx]}")
+    relpath="${norm_p#"${norm_bidspath}"/}"
+    if ! _libBIDSsh_path_is_ignored "$relpath"; then
+      printf '%s\n' "$line"
+    fi
+  done <<<"$table_data"
+}
+
 libBIDSsh_parse_bids_to_table() {
   # Parse a BIDS directory structure into TSV format
-  # Usage: libBIDSsh_parse_bids_to_table "/path/to/bids/dataset"
+  # Usage: libBIDSsh_parse_bids_to_table [OPTIONS] "/path/to/bids/dataset"
+  # Options:
+  #   --no-bidsignore        do not honor the dataset's .bidsignore or defaults
+  #   --no-default-ignores   honor .bidsignore but skip the built-in default ignores
   # Returns: TSV data through stdout with columns for each BIDS entity
   # Example:
   #   bids_table=$(libBIDSsh_parse_bids_to_table "/path/to/bids")
-  local bidspath="${1:-}"
+  local bidspath=""
+  local honor_bidsignore=1
+  local use_defaults=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bidsignore) honor_bidsignore=1; shift ;;
+      --no-bidsignore) honor_bidsignore=0; shift ;;
+      --default-ignores) use_defaults=1; shift ;;
+      --no-default-ignores) use_defaults=0; shift ;;
+      --)
+        # End of options: everything after is positional (allows a path like "-x").
+        shift
+        while [[ $# -gt 0 ]]; do
+          if [[ -z "$bidspath" ]]; then
+            bidspath="$1"
+          else
+            echo "Error: unexpected extra argument '$1'" >&2
+            return 1
+          fi
+          shift
+        done
+        ;;
+      -*) echo "Unknown option: $1" >&2; return 1 ;;
+      *)
+        if [[ -z "$bidspath" ]]; then
+          bidspath="$1"
+        else
+          echo "Error: unexpected extra argument '$1'" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
   if [[ ! -d "$bidspath" ]]; then
     echo "Error: Directory '$bidspath' does not exist" >&2
     return 1
@@ -535,6 +815,30 @@ libBIDSsh_parse_bids_to_table() {
   shopt -u extglob
   shopt -u nullglob
   shopt -u globstar
+
+  # Drop files excluded by the dataset's .bidsignore (and built-in default
+  # ignores) unless disabled. Paths are matched relative to the dataset root.
+  if ((honor_bidsignore)); then
+    _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
+    if ((${#_LIBBIDSSH_BIDSIGNORE_REGEX[@]} > 0)); then
+      local norm_bidspath
+      norm_bidspath=$(tr -s / <<<"${bidspath%/}")
+      local -a kept_files=()
+      local f relpath
+      for f in "${files[@]}"; do
+        relpath=$(tr -s / <<<"$f")
+        relpath="${relpath#"${norm_bidspath}"/}"
+        if ! _libBIDSsh_path_is_ignored "$relpath"; then
+          kept_files+=("$f")
+        fi
+      done
+      if ((${#kept_files[@]})); then
+        files=("${kept_files[@]}")
+      else
+        files=()
+      fi
+    fi
+  fi
 
   # Order of entities from generate_entity_patterns.sh.
   # entities_order holds entity keys (filename tokens); entities_name_order holds
@@ -826,5 +1130,5 @@ if ! (return 0 2>/dev/null); then
     echo 'error: the first argument must be a path to a bids dataset'
     exit 1
   fi
-  libBIDSsh_parse_bids_to_table "${1}"
+  libBIDSsh_parse_bids_to_table "$@"
 fi
