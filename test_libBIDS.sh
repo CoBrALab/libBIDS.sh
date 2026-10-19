@@ -1708,6 +1708,17 @@ test_apply_bidsignore_root_spelling() {
   mkdir -p "${parent}/work"
   out=$(cd "${parent}/work" && libBIDSsh_apply_bidsignore "${raw_abs}" "../${name}" 2>&1)
   assert_equals "3" "$(_row_count "${out}")" "absolute table, '../x' root" || return 1
+  # A table path with a '..' component must not be tested as it is: the
+  # default '.*' ignore would match it and drop every row.
+  local raw_dotdot
+  raw_dotdot=$(cd "${parent}" && libBIDSsh_parse_bids_to_table --no-bidsignore "${name}/../${name}")
+  out=$(cd "${parent}" && libBIDSsh_apply_bidsignore "${raw_dotdot}" "${name}" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "'x/../x' table, 'x' root" || return 1
+  local raw_up
+  raw_up=$(cd "${root}/sub-02" && libBIDSsh_parse_bids_to_table --no-bidsignore ..)
+  out=$(cd "${root}/sub-02" && libBIDSsh_apply_bidsignore "${raw_up}" . 2>"${root}.up.err")
+  assert_equals "7" "$(_row_count "${out}")" "'..' table, '.' root keeps rows" || return 1
+  assert_contains "Warning" "$(cat "${root}.up.err")" "'..' table, '.' root writes a warning" || return 1
 
   # Rows that are not below the root are kept, with a warning on stderr.
   local other err

@@ -126,12 +126,6 @@ name (`subject`).
   pipeline (`b`).
 - `datatype`: BIDS datatype (anat, func, dwi, etc.). A file at the dataset root
   has datatype `NA`.
-
-The `derivatives` and `datatype` values come from the path relative to the dataset
-root. The directories above the root have no effect: a dataset stored in
-`/data/derivatives/study/` does not get `derivatives` = `study`, and a dataset
-directory named `anat` does not give its root-level files datatype `anat`. The
-`path` column keeps the path as given to the parser.
 - BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
 - `suffix`: File suffix (bold, T1w, dwi, etc.). A core or table file has no
   entities, and its suffix is the whole stem: `dataset_description`,
@@ -140,6 +134,12 @@ directory named `anat` does not give its root-level files datatype `anat`. The
   `-r "suffix:^description$"` finds atlas description files only.
 - `extension`: File extension
 - `path`: Full file path
+
+The `derivatives` and `datatype` values come from the path relative to the dataset
+root. The directories above the root have no effect: a dataset stored in
+`/data/derivatives/study/` does not get `derivatives` = `study`, and a dataset
+directory named `anat` does not give its root-level files datatype `anat`. The
+`path` column keeps the path as given to the parser.
 
 **Note:** When filtering or accessing columns, always use these entity names (e.g., `subject`, `session`, `acquisition`).
 

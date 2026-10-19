@@ -262,7 +262,9 @@ _libBIDSsh_relative_path() {
   # 'ds', 'ds/', './ds' and 'ds//' are the same root. No subprocess is used.
   # Returns 0 and sets out_var when the path is below the root. Returns 1
   # and sets out_var to "" when it is not (for example a relative path and
-  # an absolute root).
+  # an absolute root), or when the result has a '..' component (for example
+  # 'ds/../ds/x' and root 'ds'). '..' is not resolved, thus such a result is
+  # not known to be below the root.
   # Usage: _libBIDSsh_relative_path "<path>" "<root>" out_var
   # Example: "ds//sub-01/anat/x.nii" "./ds/" -> "sub-01/anat/x.nii"
   local -n _rp_out="$3"
@@ -279,6 +281,11 @@ _libBIDSsh_relative_path() {
   else
     [[ ${norm_path} == "${norm_root}"/?* ]] || return 1
     _rp_out="${norm_path#"${norm_root}"/}"
+  fi
+  if [[ ${_rp_out} == .. || ${_rp_out} == ../* || ${_rp_out} == */../* ||
+    ${_rp_out} == */.. ]]; then
+    _rp_out=""
+    return 1
   fi
   return 0
 }
@@ -873,13 +880,14 @@ libBIDSsh_apply_bidsignore() {
     row_path="${cols[path_idx]-}"
     if ! _libBIDSsh_relative_path "$row_path" "$bidspath" relpath; then
       if [[ -z $canon_root ]]; then
-        canon_root=$(cd -- "$bidspath" >/dev/null && pwd -P) || canon_root=""
+        canon_root=$(CDPATH='' cd -- "$bidspath" >/dev/null 2>&1 && pwd -P) ||
+          canon_root=""
       fi
       row_dir="."
       [[ $row_path == */* ]] && row_dir="${row_path%/*}"
       [[ -z $row_dir ]] && row_dir="/"
       if [[ -z ${canon_dirs[$row_dir]+set} ]]; then
-        canon_dirs[$row_dir]=$(cd -- "$row_dir" >/dev/null 2>&1 && pwd -P) ||
+        canon_dirs[$row_dir]=$(CDPATH='' cd -- "$row_dir" >/dev/null 2>&1 && pwd -P) ||
           canon_dirs[$row_dir]=""
       fi
       if [[ -z $canon_root || -z ${canon_dirs[$row_dir]} ]] ||
