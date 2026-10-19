@@ -765,6 +765,32 @@ z"
   while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
   assert_equals "1 2 3 " "$out" "an empty table resets the cursor" || return 1
 
+  # A new array that is declared but has no value starts again, also when
+  # saved state for that array name stays after a break (set -u is on).
+  # The helper runs in this shell (not in a subshell), so the state stays.
+  local _iter_out=""
+  _iter_first_row() {
+    local -A row
+    while libBIDSsh_table_iterator "$t1" row; do
+      _iter_out+="${row[a]} "
+      [[ "${row[a]}" == "1" ]] && break
+    done
+  }
+  _iter_first_row
+  _iter_out+="|"
+  _iter_first_row
+  unset -f _iter_first_row
+  assert_equals "1 |1 " "$_iter_out" "local -A row after break starts again" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  unset row
+  declare -A row
+  while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
+  assert_equals "1 2 3 " "$out" "unset row and declare -A row starts again" || return 1
+
   local t3="__current_line	b
 7	p"
   declare -A r

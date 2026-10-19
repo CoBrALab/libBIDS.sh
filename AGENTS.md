@@ -438,7 +438,9 @@ module-level `_LIBBIDSSH_ITER_*` associative arrays, keyed by the row array name
 (the row array holds only column keys). A different table or different sort args
 start a new iteration; the state is removed after the last row. After a `break`,
 the same array + table + sort args continue where they stopped; `row=()` or a call
-with an empty table (`libBIDSsh_table_iterator "" row || true`) starts again. Nested
+with an empty table (`libBIDSsh_table_iterator "" row || true`) starts again, and so
+does a new array (`local -A row`). Do not reset with `unset row` alone (the next call
+fails); declare the array again after `unset`. Nested
 loops must use different array names (the state is keyed by the name). Do not
 change the table string inside the loop body (a changed table starts again from
 row 0). After a `break`, the state (a copy of the table and its sorted rows) stays

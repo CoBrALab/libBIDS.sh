@@ -1024,8 +1024,12 @@ libBIDSsh_table_iterator() {
   #   the table string inside the loop body: a changed table starts again from
   #   the first row. After a "break", the state (a copy of the table and its
   #   sorted rows) stays in memory until the next call with that array name;
-  #   use one of the resets above to remove it. Array names that start with
-  #   "_lbit_" are reserved.
+  #   use one of the resets above to remove it. A new array (for example
+  #   "local -A row" in a function) also starts again. Do not use "unset row"
+  #   alone as a reset: declare the array again after it (declare -A row).
+  #   Array names that start with "_lbit_" are reserved.
+  # Cost: each call gets the table by value and compares it with the saved
+  #   table, so each call still takes time in proportion to the table size.
   # Example:
   #   declare -A row
   #   while libBIDSsh_table_iterator "$data" row "subject" "session" -r; do
@@ -1052,12 +1056,14 @@ libBIDSsh_table_iterator() {
 
   # Continue the active iteration only if the sort arguments and the table are
   # the same, and the caller did not empty the array since the last call.
+  # "${arr[*]+x}" is empty for an empty array and for a declared array that
+  # has no value ("local -A row"), and is safe under "set -u".
   # The table is compared last, with "[" (a plain string compare), because a
   # compare of a large table is the slowest step of a call.
   local _lbit_resume=false
   if [[ -n "${_LIBBIDSSH_ITER_SIG[${_lbit_arr_name}]+x}" &&
     "${_LIBBIDSSH_ITER_SIG[${_lbit_arr_name}]}" == "${_lbit_args_sig}" &&
-    ${#_lbit_arr_ref[@]} -gt 0 ]] &&
+    -n "${_lbit_arr_ref[*]+x}" ]] &&
     [ "${1:-}" = "${_LIBBIDSSH_ITER_TABLE[${_lbit_arr_name}]}" ]; then
     _lbit_resume=true
   fi
