@@ -396,8 +396,9 @@ matching (files are selected by suffix and extension only).
 
 ### bids-examples/run_tests.sh
 
-`bids-examples/` is not a git submodule. `run_tests.sh` belongs to the upstream
-bids-examples repository, not to this project.
+`bids-examples/` is a git submodule pinned to one upstream commit (about 110
+datasets). `run_tests.sh` belongs to the upstream bids-examples repository, not to
+this project.
 
 Validates BIDS compliance of example datasets. Features:
 - accepts an optional dataset list (defaults to all dirs except `node_modules`)
