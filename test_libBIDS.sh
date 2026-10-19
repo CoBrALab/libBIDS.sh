@@ -1708,6 +1708,14 @@ test_apply_bidsignore_root_spelling() {
   mkdir -p "${parent}/work"
   out=$(cd "${parent}/work" && libBIDSsh_apply_bidsignore "${raw_abs}" "../${name}" 2>&1)
   assert_equals "3" "$(_row_count "${out}")" "absolute table, '../x' root" || return 1
+
+  # Rows that are not below the root are kept, with a warning on stderr.
+  local other err
+  other=$(mktemp -d "${test_tmpdir}/other.XXXXXX")
+  out=$(libBIDSsh_apply_bidsignore "${raw_abs}" "${other}" 2>"${other}.err")
+  err=$(cat "${other}.err")
+  assert_equals "7" "$(_row_count "${out}")" "rows not below the root are kept" || return 1
+  assert_contains "Warning" "${err}" "a warning is written for rows not below the root" || return 1
 }
 
 echo "Starting libBIDS.sh test suite..."
