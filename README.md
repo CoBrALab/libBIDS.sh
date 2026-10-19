@@ -131,12 +131,15 @@ name (`subject`).
 - `datatype`: BIDS datatype (anat, func, dwi, etc.). A file at the dataset root
   has datatype `NA`.
 - BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
+  Each value is the full `<key>-<label>` pair from the filename (e.g. `sub-01`,
+  `run-1`), not only the BIDS label or index (`01`, `1`).
 - `suffix`: File suffix (bold, T1w, dwi, etc.). A core or table file has no
   entities, and its suffix is the whole stem: `dataset_description`,
   `participants`, `samples`, or the name of the phenotype table (for
   `phenotype/acds_adult.tsv` the suffix is `acds_adult`). Thus
   `-r "suffix:^description$"` finds atlas description files only.
-- `extension`: File extension
+- `extension`: File extension without the leading dot (e.g. `nii.gz`, `json`,
+  `tsv`). The BIDS schema writes extensions with the dot (`.nii.gz`).
 - `path`: Full file path
 
 The `derivatives` and `datatype` values come from the path relative to the dataset
@@ -144,6 +147,9 @@ root. The directories above the root have no effect: a dataset stored in
 `/data/derivatives/study/` does not get `derivatives` = `study`, and a dataset
 directory named `anat` does not give its root-level files datatype `anat`. The
 `path` column keeps the path as given to the parser.
+
+The TSV values are not escaped. A path that contains a tab or a newline breaks
+the table structure (a tab moves the columns, a newline splits the row).
 
 **Note:** When filtering or accessing columns, always use these entity names (e.g., `subject`, `session`, `acquisition`).
 
@@ -432,9 +438,10 @@ _libBIDSsh_parse_filename "/data/ds/sub-01/anat/sub-01_T1w.nii.gz" file_info "/d
 
 **Populated fields:**
 
-- Individual BIDS entities using entity keys (`sub`, `ses`, `task`, `acq`, etc.)
+- Individual BIDS entities using entity keys (`sub`, `ses`, `task`, `acq`, etc.),
+  each with its `<key>-<label>` value (e.g. `sub-01`)
 - `suffix`: File suffix
-- `extension`: File extension
+- `extension`: File extension without the leading dot (e.g. `nii.gz`)
 - `datatype`: Inferred datatype
 - `derivatives`: Pipeline name if applicable
 - `path`: Full path
@@ -502,7 +509,7 @@ done
 
 ### Adding non-BIDS entities 
 
-If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required) and `name` (the long column header, required). Each custom entity adds one column after the standard entity columns. The optional `pattern` field (a bash extended-glob) is not used for matching: the parser selects files by suffix and extension only, and then reads every `<key>-<value>` token from the filename:
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved), not from the current directory or the dataset. Each entity object uses `key` (the short filename token, required) and `name` (the long column header, required). Each custom entity adds one column after the standard entity columns. The optional `pattern` field (a bash extended-glob) is not used for matching: the parser selects files by suffix and extension only, and then reads every `<key>-<value>` token from the filename:
 
 ```json
 {
