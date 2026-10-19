@@ -97,6 +97,10 @@ ignores (see [`.bidsignore` support](#bidsignore-support) below).
 - A file or directory is a row when its name is `<anything>_<suffix><extension>`,
   where `<suffix>` and `<extension>` are values from the BIDS schema. Entity
   tokens in the name are not checked (permissive matching).
+- The extension is the longest schema extension at the end of the name. Thus a `.`
+  in an entity value (not valid BIDS) does not change the suffix and extension.
+  A token whose key is a core column name (`path`, `datatype`, `derivatives`,
+  `suffix`, `extension`) is ignored and does not change that column.
 - The parser follows symbolic links to directories (for example a `sub-02` link to
   other storage). A link loop is reported by `find` on stderr and is not followed.
 - A file whose whole stem is a schema suffix is also a row, at any level. These are

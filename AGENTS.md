@@ -40,6 +40,9 @@ Directory tree → filename parsing → TSV table → filtering / extraction / i
    at the dataset (or derivatives pipeline) root. `find -L` lists the candidates;
    it follows symlinked directories and does not go into `.ds`/`.mefd`/`.ome.zarr`.
 2. **Filename parsing**: regex-based entity extraction into associative arrays.
+   The extension is the longest schema extension at the end of the filename
+   (fallback: all after the first `.`). Tokens with a core column key (`path`,
+   `datatype`, `derivatives`, `suffix`, `extension`) are ignored.
 3. **JSON sidecar matching**: exact filename matching only (no inheritance
    resolution).
 4. **Output**: TSV table with columns `derivatives`, `datatype`, one column per
