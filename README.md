@@ -454,7 +454,7 @@ done
 
 ### Adding non-BIDS entities 
 
-If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory. Each entity object uses `key` (the short filename token), `name` (the long column header), and `pattern` (a bash extended-glob):
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required), `name` (the long column header, required), and `pattern` (a bash extended-glob, optional):
 
 ```json
 {
@@ -475,6 +475,8 @@ If your dataset uses an entity that is not part of the official BIDS specificati
 ```
 
 To see an example, rename the template file from `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
+
+A `key` or `name` that is the same as a standard BIDS entity, a fixed column (`derivatives`, `datatype`, `suffix`, `extension`, `path`, `json_path`) or an earlier custom entity is skipped with a warning to stderr. A JSON file that is not valid, or that has no `entities` array, is an error: `libBIDSsh_parse_bids_to_table` writes the file name to stderr and returns 1.
 
 ## Notes
 

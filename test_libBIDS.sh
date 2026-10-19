@@ -180,6 +180,88 @@ test_parse_bids_to_table() {
   fi
   return 0
 }
+# shellcheck disable=SC2016  # $1 and $2 expand in the child shell.
+_custom_header() {
+  # Source a library copy in a new shell, parse a dataset and print the
+  # header columns that match "acq" or "body", one per line.
+  # Usage: _custom_header <libBIDS.sh> <dataset> [cd_dir]
+  (
+    if [[ -n "${3:-}" ]]; then
+      cd "$3"
+    fi
+    "${BASH}" -c 'source "$1" && libBIDSsh_parse_bids_to_table "$2"' _ "$1" "$2" |
+      head -n 1 | tr '\t' '\n' | grep -e acq -e body || true
+  )
+}
+
+# shellcheck disable=SC2016  # $1 and $2 expand in the child shell.
+test_load_custom_entities() {
+  if ! command -v jq >/dev/null 2>&1; then
+    skip_test "jq not found"
+  fi
+  local root
+  root=$(mktemp -d "${test_tmpdir}/custom.XXXXXX")
+  mkdir -p "${root}/lib/custom" "${root}/link" "${root}/ds/sub-01/anat"
+  cp "${test_dir}/libBIDS.sh" "${root}/lib/libBIDS.sh"
+  touch "${root}/ds/sub-01/anat/sub-01_acq-x_bp-chest_T1w.nii.gz"
+  local lib="${root}/lib/libBIDS.sh"
+  local cfg="${root}/lib/custom/a.json"
+  local out err rc
+
+  # A key that is the same as a standard key or an earlier custom key, and a
+  # name that is the same as a standard column, are skipped with a warning.
+  printf '%s' '{"entities":[{"key":"bp","name":"bodypart","pattern":"p"},
+    {"key":"bp","name":"bodypart2","pattern":"x"},
+    {"key":"acq","name":"acquisition","pattern":"y"},
+    {"key":"zz","name":"acquisition"}]}' >"$cfg"
+  out=$(_custom_header "$lib" "${root}/ds" 2>/dev/null)
+  assert_equals $'acquisition\nbodypart' "$out" \
+    "duplicate custom keys/names must not add columns" || return 1
+  err=$("${BASH}" -c 'source "$1" && libBIDSsh_parse_bids_to_table "$2"' \
+    _ "$lib" "${root}/ds" 2>&1 >/dev/null)
+  assert_contains "Warning: skipping custom entity key 'bp'" "$err" \
+    "duplicate custom key must warn" || return 1
+  assert_contains "Warning: skipping custom entity key 'acq'" "$err" \
+    "custom key equal to a standard key must warn" || return 1
+  assert_contains "Warning: skipping custom entity name 'acquisition'" "$err" \
+    "custom name equal to a standard column must warn" || return 1
+
+  # A ';' in a name is kept, and 'pattern' is optional.
+  printf '%s' '{"entities":[{"key":"bp","name":"body;part"}]}' >"$cfg"
+  out=$(_custom_header "$lib" "${root}/ds")
+  assert_equals $'acquisition\nbody;part' "$out" \
+    "';' in a custom name must be kept" || return 1
+
+  # Malformed JSON is an error that names the file.
+  printf '%s' '{"entities":[{"key":"bp","name":"bodypart"},]}' >"$cfg"
+  rc=0
+  err=$("${BASH}" -c 'source "$1" && libBIDSsh_parse_bids_to_table "$2"' \
+    _ "$lib" "${root}/ds" 2>&1 >/dev/null) || rc=$?
+  assert_equals "1" "$rc" "malformed custom JSON must return 1" || return 1
+  assert_contains "invalid custom entity file '${cfg}'" "$err" \
+    "malformed custom JSON must name the file" || return 1
+
+  # custom/ is found next to the real file when sourced through a symlink,
+  # and when CDPATH is set.
+  printf '%s' '{"entities":[{"key":"bp","name":"bodypart","pattern":"p"}]}' >"$cfg"
+  ln -s "$lib" "${root}/link/libBIDS.sh"
+  out=$(_custom_header "${root}/link/libBIDS.sh" "${root}/ds")
+  assert_equals $'acquisition\nbodypart' "$out" \
+    "custom/ must be found through a symlinked libBIDS.sh" || return 1
+  out=$(CDPATH=. _custom_header lib/libBIDS.sh ds "$root")
+  assert_equals $'acquisition\nbodypart' "$out" \
+    "custom/ must be found when CDPATH is set" || return 1
+
+  # The loader must not change the caller's variables.
+  out=$(
+    "${BASH}" -c 'key=K name=N pattern=P json_file=J
+      source "$1" && libBIDSsh_parse_bids_to_table "$2" >/dev/null
+      echo "${key} ${name} ${pattern} ${json_file}"' _ "$lib" "${root}/ds"
+  )
+  assert_equals "K N P J" "$out" \
+    "loader with custom files must not change caller variables" || return 1
+  return 0
+}
 
 test_parse_bids_to_table_without_jq() {
   # The core parser must work when jq is not installed and no
@@ -1342,6 +1424,7 @@ run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
+run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
