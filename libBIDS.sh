@@ -226,16 +226,78 @@ libBIDSsh_drop_na_columns() {
     }' <<<"${table_data}"
 }
 
+_libBIDSsh_normalize_path() {
+  # Internal function to normalize the spelling of a path without a
+  # subprocess, so two equivalent spellings of one path compare equal.
+  # It collapses runs of '/', removes '.' components and removes trailing
+  # '/'. It does not resolve '..' or symbolic links. An empty result is '.'.
+  # Usage: _libBIDSsh_normalize_path "<path>" out_var
+  # Example: "./ds//sub-01/./anat/" -> "ds/sub-01/anat"
+  local -n _np_out="$2"
+  local p="$1"
+  while [[ ${p} == *//* ]]; do
+    p="${p//\/\//\/}"
+  done
+  while [[ ${p} == */./* ]]; do
+    p="${p//\/.\//\/}"
+  done
+  while [[ ${p} == ./* ]]; do
+    p="${p#./}"
+  done
+  while [[ ${p} == */. ]]; do
+    p="${p%.}"
+  done
+  while [[ ${p} == */ && ${p} != / ]]; do
+    p="${p%/}"
+  done
+  if [[ -z ${p} || ${p} == . ]]; then
+    p="."
+  fi
+  _np_out="${p}"
+}
+
+_libBIDSsh_relative_path() {
+  # Internal function to get the path of a file relative to a dataset root.
+  # Both paths are normalized first (see _libBIDSsh_normalize_path), thus
+  # 'ds', 'ds/', './ds' and 'ds//' are the same root. No subprocess is used.
+  # Returns 0 and sets out_var when the path is below the root. Returns 1
+  # and sets out_var to "" when it is not (for example a relative path and
+  # an absolute root).
+  # Usage: _libBIDSsh_relative_path "<path>" "<root>" out_var
+  # Example: "ds//sub-01/anat/x.nii" "./ds/" -> "sub-01/anat/x.nii"
+  local -n _rp_out="$3"
+  local norm_path norm_root
+  _libBIDSsh_normalize_path "$1" norm_path
+  _libBIDSsh_normalize_path "$2" norm_root
+  _rp_out=""
+  if [[ ${norm_root} == . ]]; then
+    [[ ${norm_path} == /* || ${norm_path} == . ]] && return 1
+    _rp_out="${norm_path}"
+  elif [[ ${norm_root} == / ]]; then
+    [[ ${norm_path} == /?* ]] || return 1
+    _rp_out="${norm_path#/}"
+  else
+    [[ ${norm_path} == "${norm_root}"/?* ]] || return 1
+    _rp_out="${norm_path#"${norm_root}"/}"
+  fi
+  return 0
+}
+
 # shellcheck disable=SC2154,SC2034
 _libBIDSsh_parse_filename() {
   # Internal function to parse BIDS filenames into components
-  # Usage: _libBIDSsh_parse_filename "${path}" array_name
+  # Usage: _libBIDSsh_parse_filename "${path}" array_name ["${bidspath}"]
   # Populates associative array with BIDS components (entities, suffix, extension, etc.)
+  # The optional third argument is the dataset root. When it is given, the
+  # datatype and derivatives values come from the path relative to the root,
+  # thus the directories above the root have no effect. Without it (or when
+  # the path is not below the root), the full path is used.
   # Example:
   #   declare -A file_info
   #   _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
   local path="$1"
   local -n arr="$2" # nameref to the associative array
+  local root="${3:-}"
 
   # Extract the filename without path. Parameter expansion is used instead of
   # basename, dirname and tr, because a subprocess per file is slow.
@@ -254,13 +316,23 @@ _libBIDSsh_parse_filename() {
 
   arr[extension]="${filename#*.}"
 
+  # The path relative to the dataset root gives datatype and derivatives.
+  # Thus a root directory named 'anat', or a 'derivatives/<name>/' directory
+  # above the root, does not change the values.
+  local rel_path="${clean_path}"
+  if [[ -n ${root} ]]; then
+    _libBIDSsh_relative_path "${clean_path}" "${root}" rel_path ||
+      rel_path="${clean_path}"
+  fi
+
   # Datatype is the BIDS datatype directory directly containing the file (the
   # final component of the file's directory). Anchor to a whole path component
   # so an unrelated substring (e.g. "func" in "study_func/") cannot match.
+  # A file at the dataset root has no datatype.
   # ./generate_entity_patterns.sh -> datatype regex
   local dir="."
-  if [[ ${clean_path} == */* ]]; then
-    dir="${clean_path%/*}"
+  if [[ ${rel_path} == */* ]]; then
+    dir="${rel_path%/*}"
   fi
   if [[ ${dir} =~ (^|/)(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)$ ]]; then
     arr[datatype]="${BASH_REMATCH[2]}"
@@ -269,8 +341,10 @@ _libBIDSsh_parse_filename() {
   fi
 
   # Derivatives pipeline name is the path component immediately following a
-  # "derivatives/" directory; NA when the file is not under one.
-  if [[ ${path} =~ (^|/)derivatives/([^/]+)/ ]]; then
+  # "derivatives/" directory; NA when the file is not under one. For nested
+  # derivatives (derivatives/a/derivatives/b/...) the innermost pipeline (b)
+  # is used: the greedy '(.*/)?' takes the last "derivatives/" component.
+  if [[ ${rel_path} =~ ^(.*/)?derivatives/([^/]+)/ ]]; then
     arr[derivatives]="${BASH_REMATCH[2]}"
   else
     arr[derivatives]="NA"
@@ -764,8 +838,11 @@ libBIDSsh_apply_bidsignore() {
 
   _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
 
-  local norm_bidspath
-  norm_bidspath=$(tr -s / <<<"${bidspath%/}")
+  # The canonical root (symbolic links resolved) is computed only when a row
+  # path is not below the root as given, for example a relative table path
+  # and an absolute root. canon_dirs keeps one 'pwd -P' per directory.
+  local canon_root="" warned=0
+  local -A canon_dirs=()
 
   # Split on a non-whitespace separator: with IFS=$'\t', 'read' merges runs of
   # tabs, so an empty field would shift the path column.
@@ -792,11 +869,34 @@ libBIDSsh_apply_bidsignore() {
     fi
     local -a cols
     IFS="$sep" read -r -a cols <<<"${line//$'\t'/$sep}"
-    local norm_p relpath
-    norm_p=$(tr -s / <<<"${cols[path_idx]-}")
-    relpath="${norm_p#"${norm_bidspath}"/}"
+    local row_path relpath row_dir
+    row_path="${cols[path_idx]-}"
+    if ! _libBIDSsh_relative_path "$row_path" "$bidspath" relpath; then
+      if [[ -z $canon_root ]]; then
+        canon_root=$(cd -- "$bidspath" >/dev/null && pwd -P) || canon_root=""
+      fi
+      row_dir="."
+      [[ $row_path == */* ]] && row_dir="${row_path%/*}"
+      [[ -z $row_dir ]] && row_dir="/"
+      if [[ -z ${canon_dirs[$row_dir]+set} ]]; then
+        canon_dirs[$row_dir]=$(cd -- "$row_dir" >/dev/null 2>&1 && pwd -P) ||
+          canon_dirs[$row_dir]=""
+      fi
+      if [[ -z $canon_root || -z ${canon_dirs[$row_dir]} ]] ||
+        ! _libBIDSsh_relative_path "${canon_dirs[$row_dir]}/${row_path##*/}" \
+          "$canon_root" relpath; then
+        # Keep a row that is not below the root. Do not test its full path:
+        # a leading '.' or '..' component would match the default '.*' ignore.
+        if ((!warned)); then
+          echo "Warning: path '$row_path' is not below '$bidspath'; row kept" >&2
+          warned=1
+        fi
+        printf '%s\n' "$line"
+        continue
+      fi
+    fi
     # A directory row gets a trailing '/' for directory-only patterns.
-    if [[ -d $norm_p ]]; then
+    if [[ -d $row_path ]]; then
       relpath+=/
     fi
     if ! _libBIDSsh_path_is_ignored "$relpath"; then
@@ -922,19 +1022,16 @@ libBIDSsh_parse_bids_to_table() {
   if ((honor_bidsignore)); then
     _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
     if ((${#_LIBBIDSSH_BIDSIGNORE_REGEX[@]} > 0)); then
-      # Collapse runs of '/' (as 'tr -s /') without a subprocess per file.
-      local norm_bidspath="${bidspath%/}"
-      while [[ ${norm_bidspath} == *//* ]]; do
-        norm_bidspath="${norm_bidspath//\/\//\/}"
-      done
       local -a kept_files=()
       local f relpath
       for f in ${files[@]+"${files[@]}"}; do
-        relpath="$f"
-        while [[ ${relpath} == *//* ]]; do
-          relpath="${relpath//\/\//\/}"
-        done
-        relpath="${relpath#"${norm_bidspath}"/}"
+        # Each file is "${bidspath}/<relative path>", thus this always
+        # succeeds. Do not test the full path: a leading '.' or '..'
+        # component would match the default '.*' ignore.
+        if ! _libBIDSsh_relative_path "$f" "$bidspath" relpath; then
+          kept_files+=("$f")
+          continue
+        fi
         # A directory row (e.g. a .ds recording) gets a trailing '/', so that
         # a directory-only pattern such as '*.ds/' matches it.
         if [[ -d $f ]]; then
@@ -972,7 +1069,7 @@ libBIDSsh_parse_bids_to_table() {
   local file key
   local -A file_info
   for file in ${files[@]+"${files[@]}"}; do
-    _libBIDSsh_parse_filename "${file}" file_info
+    _libBIDSsh_parse_filename "${file}" file_info "${bidspath}"
     for key in derivatives datatype ${entities_order} suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
         printf '%s\t' "${file_info[${key}]}"

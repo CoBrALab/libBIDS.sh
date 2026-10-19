@@ -89,8 +89,11 @@ returns 1. Numeric (1-based) column indices are also accepted.
 ### Core table structure
 
 Each row is one file. Columns:
-- `derivatives` — pipeline name if under a `derivatives/` folder, else `NA`
-- `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...)
+- `derivatives` — pipeline name if under a `derivatives/` folder, else `NA`;
+  the innermost pipeline for nested `derivatives/a/derivatives/b/...` (`b`)
+- `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...); `NA` at the dataset root
+- Both are computed from the path **relative to the dataset root**, so directories
+  above the root (e.g. `/data/derivatives/study/`) have no effect.
 - BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...
 - `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...); for a core or table file
   (`dataset_description.json`, `participants.*`, `samples.*`, `phenotype/*`) the
@@ -111,9 +114,11 @@ Each row is one file. Columns:
 - `libBIDSsh_table_iterator` — iterate TSV rows into an associative array, with sorting
 - `libBIDSsh_json_to_associative_array` — parse a JSON file into a Bash associative array
 
-### Internal Functions (6)
+### Internal Functions (8)
 
-- `_libBIDSsh_parse_filename` — regex-based entity extraction from a filename
+- `_libBIDSsh_normalize_path` — normalize a path spelling (collapse `//`, drop `.` components and trailing `/`) without a subprocess
+- `_libBIDSsh_relative_path` — path relative to a dataset root, for equivalent spellings of the root
+- `_libBIDSsh_parse_filename` — regex-based entity extraction from a filename (optional 3rd arg: dataset root)
 - `_libBIDSsh_load_custom_entities` — load custom entity definitions from `custom/*.json`
 - `_libBIDSsh_compile_bidsignore_line` — compile one gitignore-style pattern to an anchored ERE
 - `_libBIDSsh_compile_bidsignore` — compile default ignores + root `.bidsignore` into match arrays
@@ -329,6 +334,7 @@ fi
 - Version check + strict mode — top of file
 - `libBIDSsh_table_filter` — TSV filtering with AWK
 - `libBIDSsh_drop_na_columns` — drop all-NA columns
+- `_libBIDSsh_normalize_path`, `_libBIDSsh_relative_path` — path helpers
 - `_libBIDSsh_parse_filename` — regex filename parser
 - `libBIDSsh_extension_json_rows_to_column_json_path` — JSON sidecar folding
 - `_libBIDSsh_load_custom_entities` — custom entity loader
