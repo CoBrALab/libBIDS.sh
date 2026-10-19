@@ -152,6 +152,9 @@ libBIDSsh_table_filter "$table_data" -r "suffix:bold" --invert
 ### `libBIDSsh_drop_na_columns`
 
 Removes columns that contain only NA values across all rows.
+The header sets the number of columns. Empty lines (for example a trailing
+newline) are ignored. A field that a short row does not have counts as NA.
+A header-only table (no data rows) is returned unchanged.
 
 ```bash
 cleaned=$(libBIDSsh_drop_na_columns "$table_data")
