@@ -260,6 +260,23 @@ test_table_filter_invert_complement() {
   return 0
 }
 
+test_table_filter_ds001() {
+  # Column order, row filter and a backslash pattern on real data (ds001).
+  local full out err
+  full=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+
+  out=$(libBIDSsh_table_filter "$full" -c "path,subject,run" -r "suffix:^bold$")
+  assert_equals "path	subject	run" "$(head -n 1 <<<"$out")" "-c keeps the requested order (ds001)" || return 1
+  assert_equals "49" "$(($(wc -l <<<"$out") - 1))" "-r 'suffix:^bold$' row count (ds001)" || return 1
+
+  out=$(libBIDSsh_table_filter "$full" -r 'extension:^nii\.gz$' 2>"${test_tmpdir}/err")
+  err=$(<"${test_tmpdir}/err")
+  assert_equals "80" "$(($(wc -l <<<"$out") - 1))" "-r 'extension:^nii\\.gz$' row count (ds001)" || return 1
+  assert_equals "" "$err" "'\\.' in a pattern must not give a warning (ds001)" || return 1
+
+  return 0
+}
+
 test_table_filter_columns() {
   # Column selection: requested order, first of duplicate names, errors for
   # unknown names, index 0, index > NF and a missing option argument.
@@ -571,6 +588,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
+run_test "Public API: libBIDSsh_table_filter on ds001 data" test_table_filter_ds001
 run_test "Public API: libBIDSsh_table_filter column errors" test_table_filter_columns
 run_test "Public API: libBIDSsh_table_filter on POSIX awk" test_table_filter_posix_awk
 run_test "Bash 4.3: empty arrays under set -u" test_empty_arrays_nounset
