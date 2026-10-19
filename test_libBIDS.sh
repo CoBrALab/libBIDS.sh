@@ -360,6 +360,32 @@ test_parse_bids_to_table_func_gii() {
   return 0
 }
 
+# The test sets plain variables with the names of internal arrays.
+# shellcheck disable=SC2034,SC2128,SC2178
+test_parse_bids_to_table_no_leaks() {
+  # The parser and _libBIDSsh_parse_filename must not change the variables or
+  # the shell options of the caller.
+  local root
+  root=$(_make_bidsignore_fixture)
+  local out
+  out=$(
+    entities_order=EO entities_name_order=ENO entity_key=EK entity_name=EN
+    file=F key=K parts=P i=I
+    shopt -s extglob globstar
+    shopt -u nullglob
+    libBIDSsh_parse_bids_to_table "$root" >/dev/null
+    declare -A info
+    _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" info
+    echo "${entities_order} ${entities_name_order} ${entity_key} ${entity_name}" \
+      "${file} ${key} ${parts} ${i}"
+    shopt -p extglob nullglob globstar || true
+  )
+  assert_equals "EO ENO EK EN F K P I
+shopt -s extglob
+shopt -u nullglob
+shopt -s globstar" "$out" "caller variables and shell options must not change"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1465,6 +1491,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
 run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_to_table_func_gii
+run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_parse_bids_to_table_no_leaks
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement

@@ -279,6 +279,8 @@ _libBIDSsh_parse_filename() {
   local name_no_ext="${filename%%.*}"
 
   # Split into parts separated by _
+  local -a parts
+  local i
   IFS='_' read -ra parts <<<"${name_no_ext}"
 
   # Process middle parts which are _<key>-<value>
@@ -858,6 +860,10 @@ libBIDSsh_parse_bids_to_table() {
 
   local pattern="*${suffixes}${extensions}"
 
+  # Save the caller's shell options and restore them after the glob.
+  # 'shopt -p' returns non-zero when an option is off, thus '|| true'.
+  local saved_shopts
+  saved_shopts=$(shopt -p extglob nullglob globstar) || true
   shopt -s extglob
   shopt -s nullglob
   shopt -s globstar
@@ -865,9 +871,7 @@ libBIDSsh_parse_bids_to_table() {
   # shellcheck disable=SC2206
   local files=("${bidspath}"/**/${pattern})
 
-  shopt -u extglob
-  shopt -u nullglob
-  shopt -u globstar
+  eval "${saved_shopts}"
 
   # Drop files excluded by the dataset's .bidsignore (and built-in default
   # ignores) unless disabled. Paths are matched relative to the dataset root.
@@ -902,6 +906,7 @@ libBIDSsh_parse_bids_to_table() {
   # Order of entities from generate_entity_patterns.sh.
   # entities_order holds entity keys (filename tokens); entities_name_order holds
   # entity names (the long, canonical column headers). Both in canonical BIDS order.
+  local entities_name_order entities_order entity_key entity_name
   entities_name_order=$'subject\ttemplate\tsession\tcohort\tsample\ttask\ttracksys\tacquisition\tnucleus\tvolume\tceagent\ttracer\tstain\treconstruction\tdirection\trun\tmodality\techo\tflip\tinversion\tmtransfer\tpart\tprocessing\themisphere\tspace\tsplit\trecording\tchunk\tatlas\tsegmentation\tscale\tresolution\tdensity\tlabel\tdescription'
   entities_order="sub tpl ses cohort sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk atlas seg scale res den label desc"
 
@@ -915,8 +920,9 @@ libBIDSsh_parse_bids_to_table() {
   done
 
   printf "derivatives\tdatatype\t%s\tsuffix\textension\tpath\n" "${entities_name_order}"
+  local file key
+  local -A file_info
   for file in ${files[@]+"${files[@]}"}; do
-    declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
     for key in derivatives datatype ${entities_order} suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then
