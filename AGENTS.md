@@ -152,6 +152,9 @@ git submodule update --init
 # Run the unit test suite (sources libBIDS.sh, self-contained runner)
 ./test_libBIDS.sh
 
+# Also run the suite with bash 4.3 (the documented minimum) if available
+/path/to/bash-4.3 ./test_libBIDS.sh
+
 # Manual smoke test against an example dataset
 ./libBIDS.sh bids-examples/ds001
 
@@ -177,6 +180,9 @@ cd bids-examples
   - namerefs (`local -n` / `declare -n`)
   - `readarray` / `mapfile`
 - **Strict mode**: `set -euo pipefail`
+- **Empty arrays under `set -u`**: before Bash 4.4, `"${arr[@]}"` on an empty
+  array is an "unbound variable" error. Expand an array that can be empty as
+  `${arr[@]+"${arr[@]}"}` (or guard it with a `${#arr[@]}` check).
 - **Version check**: the library validates the Bash version on load and exits otherwise.
 - macOS default Bash (3.2) is too old; install a newer Bash (e.g. via Homebrew).
 

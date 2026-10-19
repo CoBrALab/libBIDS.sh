@@ -20,7 +20,7 @@ jobs:
         # bash: "system" uses the runner's bash; a version number builds that
         # GNU bash release from source (cached). awk: the apt package that
         # provides "awk" first in PATH.
-        bash: [system]
+        bash: [system, '4.3']
         awk: [gawk]
     steps:
       - uses: actions/checkout@v4

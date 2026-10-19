@@ -164,6 +164,46 @@ A	B	C
   return 0
 }
 
+test_empty_arrays_nounset() {
+  # Bash < 4.4 treats "${arr[@]}" on an empty array as unbound under set -u.
+  # Run the common calls with empty internal arrays (no -r filters, no custom
+  # entities, no sort columns, empty result) and require no stderr output.
+  # This test only catches regressions when the suite runs on bash 4.3.
+  local table="col1	col2
+A	B
+1	2"
+  local out err
+
+  err=$( (set -u; libBIDSsh_table_filter "$table" -c "col1" >/dev/null) 2>&1)
+  assert_equals "" "$err" "table_filter without -r must not error" || return 1
+  out=$(set -u; libBIDSsh_table_filter "$table" -c "col1")
+  assert_equals "col1
+A
+1" "$out" "table_filter without -r should keep col1" || return 1
+
+  err=$( (set -u; libBIDSsh_parse_bids_to_table "bids-examples/ds001" >/dev/null) 2>&1)
+  assert_equals "" "$err" "parser without custom entities must not error" || return 1
+
+  out=$(
+    set -u
+    declare -a values
+    libBIDSsh_table_column_to_array "col1	col2" "col1" values true true
+    echo "n=${#values[@]}"
+  ) 2>&1
+  assert_equals "n=0" "$out" "column_to_array on a header-only table" || return 1
+
+  out=$(
+    set -u
+    declare -A row
+    local n=0
+    while libBIDSsh_table_iterator "$table" row; do n=$((n + 1)); done
+    echo "n=${n}"
+  ) 2>&1
+  assert_equals "n=2" "$out" "iterator without sort columns or -r" || return 1
+
+  return 0
+}
+
 test_drop_na_columns() {
   local table="col1	col2	col3
 A	NA	C
@@ -346,6 +386,7 @@ run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
+run_test "Bash 4.3: empty arrays under set -u" test_empty_arrays_nounset
 run_test "Public API: libBIDSsh_drop_na_columns" test_drop_na_columns
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
