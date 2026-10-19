@@ -123,7 +123,7 @@ libBIDS.sh/
 ├── generate_entity_patterns.sh   # Utility: generate glob patterns from schema.json
 ├── custom/                       # Custom entity definitions
 │   └── custom_entities.json.tpl  # Template for custom entities
-└── bids-examples/                # Test datasets (submodule, 40+ datasets)
+└── bids-examples/                # Test datasets (git submodule, pinned commit)
     ├── run_tests.sh              # BIDS validation script (bids-validator)
     └── default-config.json       # Validator config
 ```
@@ -146,6 +146,9 @@ libBIDSsh_parse_bids_to_table path/to/bids/dataset
 ### Testing
 
 ```bash
+# Get the bids-examples submodule (once per clone)
+git submodule update --init
+
 # Run the unit test suite (sources libBIDS.sh, self-contained runner)
 ./test_libBIDS.sh
 
@@ -358,7 +361,14 @@ run it directly.
 
 - Unit tests live in `test_libBIDS.sh` (run with `./test_libBIDS.sh`); BIDS
   compliance is validated separately via the external bids-validator.
-- No CI/CD pipeline.
+- CI: GitHub Actions (`.github/workflows/tests.yml`) runs on each push to
+  `master` and each pull request (no branch filter, so stacked PRs also run).
+  Jobs: unit tests and a parse of every bids-examples dataset (matrix of bash
+  version x awk implementation), and `shellcheck -S warning`. When a change makes
+  a new bash or awk version pass, add it to the matrix.
+- `bids-examples/` is a git submodule pinned to one upstream commit. To update it,
+  check out a new commit in the submodule and commit the new gitlink; expect test
+  and table changes from the new datasets.
 - `shellcheck` directives are used inline (`# shellcheck disable=...`); code follows
   the Google Shell Style Guide.
 

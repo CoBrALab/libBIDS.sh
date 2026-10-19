@@ -8,6 +8,12 @@ shopt -u nullglob
 # shellcheck disable=SC1091
 source "libBIDS.sh"
 
+# The example datasets come from the bids-examples git submodule.
+if [[ ! -d bids-examples/ds001 ]]; then
+  echo "Error: bids-examples/ is missing. Run: git submodule update --init" >&2
+  exit 1
+fi
+
 # Simple test runner
 tests_run=0
 tests_passed=0
