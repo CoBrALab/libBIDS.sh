@@ -343,7 +343,8 @@ and `jq`. `schema.json` is the authoritative BIDS spec source.
 ### custom/custom_entities.json.tpl
 
 Template for defining custom BIDS entities. Copy to `custom/custom_entities.json`
-to activate (the parser loads every `custom/*.json`).
+to activate (the parser loads every `custom/*.json`). The `custom/` directory is
+found next to the real `libBIDS.sh` file, also when it is sourced through a symlink.
 
 ```json
 {
@@ -476,8 +477,10 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 ### Adding custom entities
 
 1. Copy `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
-2. Define each entity's `key` (short filename token), `name` (the column header),
-   and `pattern` (Bash extended-glob).
+2. Define each entity's `key` (short filename token, required), `name` (the column
+   header, required), and optionally `pattern` (Bash extended-glob). A `key` or
+   `name` that is the same as a standard entity, a fixed column or an earlier custom
+   entity is skipped with a warning to stderr.
 3. Source the library and call `libBIDSsh_parse_bids_to_table`; custom entities are
    appended after the standard ones.
 
@@ -503,7 +506,9 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 2. **Permissive pattern matching** — may match files that are not valid BIDS.
 3. **JSON sidecars** — `..._json_rows_to_column_json_path` matches only a JSON file
    with the exact same name (different extension); no inheritance hierarchy resolution.
-4. **Malformed custom entities** — can cause runtime errors.
+4. **Malformed custom entities** — a `custom/*.json` file that is not valid JSON or
+   has no `entities` array makes the parser write the file name to stderr and
+   return 1.
 5. **`.bidsignore`** — only the **root-level** `.bidsignore` is read (no inheritance /
    nested files, matching `bids-validator`). Negation (`!`) does not specially block
    re-including a file under an already-excluded parent directory — each file's full

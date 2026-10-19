@@ -402,14 +402,30 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
 
 _libBIDSsh_load_custom_entities() {
   # Load custom entities from JSON configuration files
-  # JSON files should be placed in ./custom directory
+  # JSON files should be placed in the custom directory next to the real
+  # libBIDS.sh file (symlinks to libBIDS.sh are resolved).
   # Each JSON file should contain an "entities" array with objects having:
-  #   - key: entity key, the short filename token (e.g. "bp")
-  #   - name: entity name, the long table column header (e.g. "bodypart")
-  #   - pattern: bash glob pattern for matching
+  #   - key: entity key, the short filename token (e.g. "bp"), required
+  #   - name: entity name, the long table column header (e.g. "bodypart"),
+  #     required
+  #   - pattern: bash glob pattern for matching, optional
+  # A key or name that is the same as a standard entity, a fixed column or an
+  # earlier custom entity is skipped with a warning.
+  # A file that is not valid JSON, or that has no "entities" array, is an
+  # error: the function writes the file name to stderr and returns 1.
 
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local src="${BASH_SOURCE[0]}"
+  local link_target
+  # Resolve symlinks with a loop, because "readlink -f" is not portable.
+  while [[ -L "$src" ]]; do
+    link_target="$(readlink -- "$src")"
+    case "$link_target" in
+      /*) src="$link_target" ;;
+      *) src="$(dirname -- "$src")/${link_target}" ;;
+    esac
+  done
+  script_dir="$(CDPATH='' cd -- "$(dirname -- "$src")" >/dev/null && pwd)"
   local plugin_dir="${script_dir}/custom"
 
   # Initialize global arrays if not already defined
@@ -444,20 +460,69 @@ _libBIDSsh_load_custom_entities() {
     return 1
   fi
 
+  # Keys and names that a custom entity must not use. Keep these lists in
+  # sync with entities_order and entities_name_order in
+  # libBIDSsh_parse_bids_to_table.
+  local -A used_keys=()
+  local -A used_names=()
+  local std
+  for std in sub tpl ses cohort sample task tracksys acq nuc voi ce trc stain \
+    rec dir run mod echo flip inv mt part proc hemi space split recording \
+    chunk atlas seg scale res den label desc; do
+    used_keys["$std"]="standard entity"
+  done
+  for std in derivatives datatype subject template session cohort sample task \
+    tracksys acquisition nucleus volume ceagent tracer stain reconstruction \
+    direction run modality echo flip inversion mtransfer part processing \
+    hemisphere space split recording chunk atlas segmentation scale \
+    resolution density label description suffix extension path json_path; do
+    used_names["$std"]="standard column"
+  done
+
+  # Fields are separated by the ASCII unit separator (0x1F). It is not a
+  # whitespace character, thus empty fields are kept, and it does not occur in
+  # real keys, names or patterns.
+  local sep=$'\x1f'
+  local json_file key name pattern entity_lines
   shopt -s nullglob
   for json_file in "${json_files[@]}"; do
     if [[ -f "$json_file" ]]; then
       # Parse JSON and extract entity definitions
-      while IFS=';' read -r key name pattern; do
-        if [[ -n "$key" && -n "$name" && -n "$pattern" ]]; then
-          CUSTOM_ENTITIES["$key"]="$pattern"
-          CUSTOM_ENTITY_KEYS+=("$key")
-          CUSTOM_ENTITY_NAMES+=("$name")
+      if ! entity_lines="$(
+        jq -r --arg sep "$sep" \
+          '.entities[] | [.key, .name, .pattern]
+            | map(if . == null then "" else tostring end) | join($sep)' \
+          "$json_file"
+      )"; then
+        echo "Error: invalid custom entity file '${json_file}'" >&2
+        shopt -u nullglob
+        return 1
+      fi
+      if [[ -z "$entity_lines" ]]; then
+        continue
+      fi
+      while IFS="$sep" read -r key name pattern; do
+        if [[ -z "$key" || -z "$name" ]]; then
+          echo "Warning: skipping custom entity without key or name" \
+            "in '${json_file}'" >&2
+          continue
         fi
-      done < <(
-        jq -r '.entities[] | "\(.key);\(.name);\(.pattern)"' \
-          "$json_file" 2>/dev/null
-      )
+        if [[ -n "${used_keys[$key]+x}" ]]; then
+          echo "Warning: skipping custom entity key '${key}' in" \
+            "'${json_file}': same key as ${used_keys[$key]}" >&2
+          continue
+        fi
+        if [[ -n "${used_names[$name]+x}" ]]; then
+          echo "Warning: skipping custom entity name '${name}' in" \
+            "'${json_file}': same name as ${used_names[$name]}" >&2
+          continue
+        fi
+        used_keys["$key"]="custom entity in '${json_file}'"
+        used_names["$name"]="custom entity in '${json_file}'"
+        CUSTOM_ENTITIES["$key"]="$pattern"
+        CUSTOM_ENTITY_KEYS+=("$key")
+        CUSTOM_ENTITY_NAMES+=("$name")
+      done <<<"$entity_lines"
     fi
   done
   shopt -u nullglob
@@ -771,7 +836,7 @@ libBIDSsh_parse_bids_to_table() {
   local base_pattern="*"
 
   # Load custom entities from plugins
-  _libBIDSsh_load_custom_entities
+  _libBIDSsh_load_custom_entities || return 1
 
   # Entities components
   # Extracted from schema with generate_entity_patterns.sh
