@@ -488,6 +488,57 @@ nii.gz	/path/to/other.nii.gz	sub-2	NA" "$updated" "should fold json rows into js
   return 0
 }
 
+test_extension_json_rows_to_column_json_path_trailing_newline() {
+  local table
+  table="$(printf 'subject\tsuffix\textension\tpath\nsub-01\tbold\tnii.gz\t/a_bold.nii.gz\n\n')"
+  # Command substitution strips trailing newlines; add them back.
+  table+=$'\n\n'
+
+  local updated
+  updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
+
+  # Empty lines must not become "<empty>\tNA" rows.
+  assert_equals "subject	suffix	extension	path	json_path
+sub-01	bold	nii.gz	/a_bold.nii.gz	NA" "$updated" "should ignore empty lines" || return 1
+
+  return 0
+}
+
+test_extension_json_rows_to_column_json_path_idempotent() {
+  local table="subject	suffix	extension	path
+sub-01	bold	nii.gz	/a_bold.nii.gz
+sub-01	bold	json	/a_bold.json"
+
+  local once twice
+  once=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
+  twice=$(libBIDSsh_extension_json_rows_to_column_json_path "$once")
+
+  # A second call must not add a second json_path column.
+  assert_equals "subject	suffix	extension	path	json_path
+sub-01	bold	nii.gz	/a_bold.nii.gz	/a_bold.json" "$twice" "second call should return the table unchanged" || return 1
+
+  return 0
+}
+
+test_extension_json_rows_to_column_json_path_bids_examples() {
+  # asl001 has JSON sidecars with the same name as their data files.
+  local table once
+  table=$(libBIDSsh_parse_bids_to_table "${bids_examples}/asl001")
+  once=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
+
+  # A trailing newline must not add a row.
+  assert_equals "$once" \
+    "$(libBIDSsh_extension_json_rows_to_column_json_path "${table}"$'\n')" \
+    "asl001 with a trailing newline should give the same rows" || return 1
+
+  # A second call must not add a second json_path column.
+  assert_equals "$once" \
+    "$(libBIDSsh_extension_json_rows_to_column_json_path "$once")" \
+    "asl001 second call should return the table unchanged" || return 1
+
+  return 0
+}
+
 test_table_column_to_array() {
   local table="subject	session
 sub-01	ses-1
@@ -666,6 +717,9 @@ run_test "Public API: libBIDSsh_drop_na_columns trailing newline" test_drop_na_c
 run_test "Public API: libBIDSsh_drop_na_columns header only" test_drop_na_columns_header_only
 run_test "Public API: libBIDSsh_drop_na_columns bids-examples" test_drop_na_columns_bids_examples
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path
+run_test "libBIDSsh_extension_json_rows_to_column_json_path ignores empty lines" test_extension_json_rows_to_column_json_path_trailing_newline
+run_test "libBIDSsh_extension_json_rows_to_column_json_path is idempotent" test_extension_json_rows_to_column_json_path_idempotent
+run_test "libBIDSsh_extension_json_rows_to_column_json_path bids-examples" test_extension_json_rows_to_column_json_path_bids_examples
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array

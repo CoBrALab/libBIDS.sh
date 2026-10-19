@@ -238,6 +238,8 @@ updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$table_data")
 - Drops JSON rows that have matching data files
 - Keeps unmatched JSON files with their path in `json_path`
 - Adds `NA` for data files without direct JSON sidecars
+- Ignores empty lines (for example a trailing newline)
+- Returns the table unchanged if it already has a `json_path` column, so a second call has no effect
 
 **Example:**
 
