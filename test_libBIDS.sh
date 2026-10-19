@@ -945,6 +945,76 @@ test_json_to_associative_array() {
   return 0
 }
 
+test_json_to_associative_array_roundtrip() {
+  command -v jq >/dev/null 2>&1 || skip_test "jq not found"
+  local dir
+  dir="$(mktemp -d "${test_tmpdir}/json.XXXXXX")"
+  printf '%s\n' '{"k=eq": "v", "Multi": "line1\nline2", "Eq": "a=",' \
+    '"q\"": 1, "\"lead": 2, "Objs": [{"a": 1}], "Nested": [[1, 2]],' \
+    '"Mixed": [1, null, true, "x"], "Obj": {"b": 1}, "After": 1}' \
+    >"${dir}/round.json"
+
+  declare -A json_data
+  libBIDSsh_json_to_associative_array "${dir}/round.json" json_data
+
+  assert_equals "10" "${#json_data[@]}" "should have 10 keys" || return 1
+  assert_equals "string:v" "${json_data[k=eq]:-}" "key with '='" || return 1
+  assert_equals $'string:line1\nline2' "${json_data[Multi]:-}" "multi-line value" || return 1
+  assert_equals "string:a=" "${json_data[Eq]:-}" "value with trailing '='" || return 1
+  assert_equals "number:1" "${json_data[q\"]:-}" "key with trailing quote" || return 1
+  assert_equals "number:2" "${json_data[\"lead]:-}" "key with leading quote" || return 1
+  assert_equals 'array:{"a":1}' "${json_data[Objs]:-}" "array of objects" || return 1
+  assert_equals 'array:[1,2]' "${json_data[Nested]:-}" "array of arrays" || return 1
+  assert_equals "array:1,,true,x" "${json_data[Mixed]:-}" "array of scalars" || return 1
+  assert_equals 'object:{"b":1}' "${json_data[Obj]:-}" "object value" || return 1
+  assert_equals "number:1" "${json_data[After]:-}" "key after an array of objects" || return 1
+
+  # An empty key cannot be an array subscript; it is skipped, not fatal.
+  printf '%s\n' '{"": 1, "a": 2}' >"${dir}/empty_key.json"
+  libBIDSsh_json_to_associative_array "${dir}/empty_key.json" json_data 2>/dev/null
+  assert_equals "1" "${#json_data[@]}" "empty key should be skipped" || return 1
+  assert_equals "number:2" "${json_data[a]:-}" "key after empty key" || return 1
+  return 0
+}
+
+test_json_to_associative_array_errors() {
+  command -v jq >/dev/null 2>&1 || skip_test "jq not found"
+  local dir rc
+  dir="$(mktemp -d "${test_tmpdir}/json.XXXXXX")"
+  printf '%s\n' '{"TaskName": "rest"}' >"${dir}/first.json"
+  printf '%s\n' '{"X": 1}' >"${dir}/second.json"
+  printf '%s\n' '{"bad":' >"${dir}/bad.json"
+  printf '%s\n' '[1, 2]' >"${dir}/top_array.json"
+
+  # Keys from a previous file must not stay in the array.
+  declare -A json_data
+  libBIDSsh_json_to_associative_array "${dir}/first.json" json_data
+  libBIDSsh_json_to_associative_array "${dir}/second.json" json_data
+  assert_equals "1" "${#json_data[@]}" "array should be cleared" || return 1
+  assert_equals "NA" "${json_data[TaskName]:-NA}" "no stale TaskName" || return 1
+
+  rc=0
+  libBIDSsh_json_to_associative_array "${dir}/bad.json" json_data 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "invalid JSON should return 1" || return 1
+  assert_equals "0" "${#json_data[@]}" "array should be empty on error" || return 1
+
+  rc=0
+  libBIDSsh_json_to_associative_array "${dir}/top_array.json" json_data 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "top-level array should return 1" || return 1
+  assert_equals "0" "${#json_data[@]}" "no keys from a top-level array" || return 1
+
+  rc=0
+  (
+    # Hide jq: an empty PATH in this subshell only.
+    # shellcheck disable=SC2123
+    PATH="${dir}/no_such_dir"
+    hash -r
+    libBIDSsh_json_to_associative_array "${dir}/first.json" json_data
+  ) 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "missing jq should return 1" || return 1
+  return 0
+}
+
 # Build a small self-contained BIDS-shaped fixture with a .bidsignore.
 # Echoes the temp directory path (below test_tmpdir, removed on exit).
 _make_bidsignore_fixture() {
@@ -1075,6 +1145,8 @@ run_test "Public API: libBIDSsh_table_iterator no globals" test_table_iterator_n
 run_test "Public API: libBIDSsh_table_iterator array names" test_table_iterator_array_names
 run_test "Public API: libBIDSsh_table_iterator on bids-examples" test_table_iterator_bids_examples
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
+run_test "Public API: libBIDSsh_json_to_associative_array round-trip" test_json_to_associative_array_roundtrip
+run_test "Public API: libBIDSsh_json_to_associative_array errors" test_json_to_associative_array_errors
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
 run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore

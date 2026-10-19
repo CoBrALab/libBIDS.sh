@@ -1212,8 +1212,15 @@ libBIDSsh_json_to_associative_array() {
   # Parse a JSON file into a bash associative array
   # Usage: libBIDSsh_json_to_associative_array "file.json" array_ref
   # Arguments:
-  #   file.json: Path to JSON file
+  #   file.json: Path to JSON file. The top-level value must be an object.
   #   array_ref: Name of associative array to populate (declare -A)
+  # The function clears array_ref first. Each value has a type prefix:
+  #   string:..., number:..., boolean:..., null:null, object:{...} (JSON text),
+  #   array:a,b,c (items joined with ","; null items are empty, and items
+  #   that are arrays or objects are JSON text).
+  # Returns 0 on success. Returns 1, writes a message to stderr and leaves
+  # array_ref empty if jq is missing, the file is not valid JSON, the
+  # top-level value is not an object, or jq fails.
   # Example:
   #   declare -A json_data
   #   libBIDSsh_json_to_associative_array "file.json" json_data
@@ -1229,21 +1236,49 @@ libBIDSsh_json_to_associative_array() {
     return 1
   fi
   declare -n arr_ref="$array_name" # nameref to the associative array
+  arr_ref=()
 
-  # Use jq to process the JSON file and output key-value pairs with type prefixes
-  while IFS="=" read -r key value; do
-    # Remove quotes from key (jq outputs keys with quotes)
-    key="${key%\"}"
-    key="${key#\"}"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required to parse '$json_file'" >&2
+    return 1
+  fi
+
+  # jq writes each key and each typed value followed by a NUL byte, so keys
+  # and values can contain "=" and newlines. A shell variable cannot hold a
+  # NUL byte, so the output goes to a temporary file. This also lets us check
+  # the jq exit status before we change array_ref.
+  local tmp_file
+  tmp_file=$(mktemp "${TMPDIR:-/tmp}/libBIDSsh_json.XXXXXX") || {
+    echo "Error: Cannot create a temporary file" >&2
+    return 1
+  }
+  if ! jq -j 'if type != "object" then error("top-level JSON value is not an object") else . end
+      | to_entries[]
+      | (.key, (
+          if .value|type == "array" then "array:" + (.value
+              | map(if type == "array" or type == "object" then tojson else . end)
+              | join(","))
+          elif .value|type == "object" then "object:" + (.value|tostring)
+          else (.value|type) + ":" + (.value|tostring)
+          end
+        )) + "\u0000"' "$json_file" >"$tmp_file"; then
+    rm -f "$tmp_file"
+    echo "Error: Cannot parse '$json_file' as a JSON object" >&2
+    return 1
+  fi
+
+  local key value
+  while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+    if [[ -z "$key" ]]; then
+      # bash does not accept an empty associative array subscript
+      echo "Warning: Skipping empty key in '$json_file'" >&2
+      continue
+    fi
     # shellcheck disable=SC2034 # arr_ref is a nameref to the caller's array
     arr_ref["$key"]="$value"
-  done < <(jq -r 'to_entries[] |
-        "\(.key)=\(
-            if .value|type == "array" then "array:" + (.value|join(","))
-            elif .value|type == "object" then "object:" + (.value|tostring)
-            else (.value|type) + ":" + (.value|tostring)
-            end
-        )"' "$json_file")
+  done <"$tmp_file"
+  rm -f "$tmp_file"
+  return 0
 }
 
 # bash "if __main__" implementation
