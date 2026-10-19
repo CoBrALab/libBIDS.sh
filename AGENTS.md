@@ -105,13 +105,14 @@ Each row is one file. Columns:
 - `libBIDSsh_table_iterator` — iterate TSV rows into an associative array, with sorting
 - `libBIDSsh_json_to_associative_array` — parse a JSON file into a Bash associative array
 
-### Internal Functions (5)
+### Internal Functions (6)
 
 - `_libBIDSsh_parse_filename` — regex-based entity extraction from a filename
 - `_libBIDSsh_load_custom_entities` — load custom entity definitions from `custom/*.json`
 - `_libBIDSsh_compile_bidsignore_line` — compile one gitignore-style pattern to an anchored ERE
 - `_libBIDSsh_compile_bidsignore` — compile default ignores + root `.bidsignore` into match arrays
 - `_libBIDSsh_path_is_ignored` — test a dataset-relative path against the compiled patterns (last-match-wins)
+- `_libBIDSsh_iterator_clear` — remove the cached `libBIDSsh_table_iterator` state for one row array
 
 ## Key Directories
 
@@ -422,7 +423,8 @@ libBIDSsh_table_column_to_array "$filtered" "subject" subjects true true
 
 `libBIDSsh_table_iterator` populates an associative array (by nameref) one row per
 call and returns 0 while rows remain, 1 when done. Trailing args are sort columns;
-`-r` reverses. Use it in a `while` loop:
+`-r` reverses. Rows are always sorted (`sort --version-sort`); with no sort columns
+they are sorted by all columns, left to right. Use it in a `while` loop:
 
 ```bash
 declare -A row
@@ -430,6 +432,14 @@ while libBIDSsh_table_iterator "$filtered" row "subject" "run"; do
   echo "${row[path]}"   # access fields by column name
 done
 ```
+
+The first call sorts the table once. The sorted rows and the cursor are kept in the
+module-level `_LIBBIDSSH_ITER_*` associative arrays, keyed by the row array name
+(the row array holds only column keys). A different table or different sort args
+start a new iteration; the state is removed after the last row. After a `break`,
+the same array + table + sort args continue where they stopped; `row=()` or a call
+with an empty table (`libBIDSsh_table_iterator "" row || true`) starts again. Nested
+loops must use different array names (the state is keyed by the name).
 
 ### Processing JSON metadata
 

@@ -310,7 +310,7 @@ echo "All runs (including duplicates and NA): ${all_runs[@]}"
 
 ### `libBIDSsh_table_iterator`
 
-Iterates table rows, exposes fields in an associative array with optional sorting.
+Iterates table rows in sorted order and exposes the fields of each row in an associative array.
 
 ```bash
 while libBIDSsh_table_iterator "$table_data" row_var [sort_col1] [sort_col2] [-r]; do
@@ -320,9 +320,13 @@ done
 
 **Arguments:**
 - `table_data`: Table data string
-- `row_var`: Name of associative array to populate with each row. Keys correspond to column headers (e.g., `row[subject]`).
-- `sort_columns`: Optional column names to sort by
+- `row_var`: Name of associative array to populate with each row. Keys are the column headers only (e.g., `row[subject]`).
+- `sort_columns`: Optional column names to sort by. If you give no sort columns, rows are sorted by all columns, left to right. Rows are always sorted (`sort --version-sort`); the table order is not kept.
 - `-r`: Optional reverse sort flag
+
+**Returns:** 0 while rows remain, 1 when done. You can also call the function outside of a `while` loop (for example, to read only the first row). A call after the last row returns 1, so check its status or append `|| true` when `set -e` is on.
+
+**State:** The first call sorts the table one time and keeps the sorted rows and the cursor in internal `_LIBBIDSSH_ITER_*` arrays, keyed by the name of `row_var`. The cursor is not stored in `row_var`. A call with a different table or different sort arguments starts a new iteration. After the last row, the state is removed, so the next loop starts from the first row. After a `break`, a new loop with the same array, table and sort arguments continues after the last row it returned. To start again from the first row, empty the array (`row=()`) or call the function once with an empty table (`libBIDSsh_table_iterator "" row || true`). An inner loop that runs while an outer loop is active must use a different array name, because the state is keyed by the array name. Empty fields (two adjacent tabs) stay in their column.
 
 **Example:**
 
