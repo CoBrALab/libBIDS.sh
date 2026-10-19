@@ -21,7 +21,7 @@ jobs:
         # GNU bash release from source (cached). awk: the apt package that
         # provides "awk" first in PATH.
         bash: [system, '4.3']
-        awk: [gawk]
+        awk: [gawk, mawk]
     steps:
       - uses: actions/checkout@v4
         with:
