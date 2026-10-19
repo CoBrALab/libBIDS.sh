@@ -17,6 +17,7 @@ Pattern matching is permissive with respect to BIDS spec, it may match some file
 
 - **Bash version:** ≥ 4.3
   (Due to associative arrays, `readarray`, and `declare -n` usage)
+- **`find` and `sort`** with `-print0` and `-z` (GNU or BSD versions)
 
 macOS users: Apple's default Bash (3.2) is too old. You must upgrade to ≥ 4.3.
 
@@ -91,6 +92,28 @@ table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 By default the parser honors a root-level `.bidsignore` and the built-in default
 ignores (see [`.bidsignore` support](#bidsignore-support) below).
 
+**Which files are in the table:**
+
+- A file or directory is a row when its name is `<anything>_<suffix><extension>`,
+  where `<suffix>` and `<extension>` are values from the BIDS schema. Entity
+  tokens in the name are not checked (permissive matching).
+- The parser follows symbolic links to directories (for example a `sub-02` link to
+  other storage). A link loop is reported by `find` on stderr and is not followed.
+- A file whose whole stem is a schema suffix is also a row, at any level. These are
+  inheritance-principle sidecars with no entities, such as `T1w.json`,
+  `events.json` or `physio.json`.
+- The tabular files `participants.tsv`/`.json`, `samples.tsv`/`.json` and
+  `phenotype/<name>.tsv`/`.json` are rows when they are at the dataset root or at
+  the root of a `derivatives/<pipeline>/` directory. Phenotype rows have datatype
+  `phenotype`.
+- `dataset_description.json` is a row (at any level).
+- Other core files (`README`, `CHANGES`, `LICENSE`, `CITATION.cff`,
+  `genetic_info.json`) are not rows.
+- A directory-type recording (extension `.ds`, `.mefd` or `.ome.zarr`) is one row
+  for the directory. The files inside it are not rows.
+- Files and directories whose name starts with `.` are skipped.
+- Rows are sorted by path, in the collation order of the current locale.
+
 **Output columns:**
 
 The TSV columns use the full BIDS entity **names** (e.g. `subject`), not the entity
@@ -101,7 +124,11 @@ name (`subject`).
 - `derivatives`: Pipeline name if in derivatives folder
 - `datatype`: BIDS datatype (anat, func, dwi, etc.)
 - BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
-- `suffix`: File suffix (bold, T1w, dwi, etc.)
+- `suffix`: File suffix (bold, T1w, dwi, etc.). A core or table file has no
+  entities, and its suffix is the whole stem: `dataset_description`,
+  `participants`, `samples`, or the name of the phenotype table (for
+  `phenotype/acds_adult.tsv` the suffix is `acds_adult`). Thus
+  `-r "suffix:^description$"` finds atlas description files only.
 - `extension`: File extension
 - `path`: Full file path
 
@@ -200,8 +227,9 @@ Differences from `bids-validator`:
 **Supported gitignore syntax:** blank lines and `#` comments; `*` and `?` (which do
 not cross `/`); `**` whole-segment globstar (crosses directories); `[...]` bracket
 expressions; `\`-escapes; leading/embedded `/` to anchor a pattern to the dataset
-root; trailing `/` for directory-only matches; and `!` negation (re-include) with
-last-match-wins ordering.
+root; trailing `/` for directory-only matches (these also match a directory row,
+such as a `.ds` recording); and `!` negation (re-include) with last-match-wins
+ordering.
 
 **Limitations:** only the root-level `.bidsignore` is read (no inheritance / nested
 files, matching `bids-validator`). Because the parser only ever globs files whose
@@ -454,7 +482,7 @@ done
 
 ### Adding non-BIDS entities 
 
-If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required), `name` (the long column header, required), and `pattern` (a bash extended-glob, optional):
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required) and `name` (the long column header, required). Each custom entity adds one column after the standard entity columns. The optional `pattern` field (a bash extended-glob) is not used for matching: the parser selects files by suffix and extension only, and then reads every `<key>-<value>` token from the filename:
 
 ```json
 {

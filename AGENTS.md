@@ -27,14 +27,18 @@ or run it directly.
 ```
 Directory tree → filename parsing → TSV table → filtering / extraction / iteration
                      ↓                   ↓
-              glob patterns         AWK processing
-              (35 entities)        (column/row ops)
+          suffix+extension         AWK processing
+              glob match           (column/row ops)
 ```
 
 ### Core Parsing Flow
 
-1. **Pattern matching**: Bash extended-glob patterns match 35 standard BIDS
-   entities (`sub`, `ses`, `task`, `run`, ...) plus suffixes and extensions.
+1. **Pattern matching**: a Bash extended-glob pattern `*_<suffix><extension>`
+   selects files by schema suffix and extension only. Entity tokens are not
+   checked during matching (permissive matching). Also matched: suffix-only
+   sidecars (`T1w.json`), and `participants`/`samples`/`phenotype/*` `.tsv`/`.json`
+   at the dataset (or derivatives pipeline) root. `find -L` lists the candidates;
+   it follows symlinked directories and does not go into `.ds`/`.mefd`/`.ome.zarr`.
 2. **Filename parsing**: regex-based entity extraction into associative arrays.
 3. **JSON sidecar matching**: exact filename matching only (no inheritance
    resolution).
@@ -88,7 +92,9 @@ Each row is one file. Columns:
 - `derivatives` — pipeline name if under a `derivatives/` folder, else `NA`
 - `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...)
 - BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...
-- `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...)
+- `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...); for a core or table file
+  (`dataset_description.json`, `participants.*`, `samples.*`, `phenotype/*`) the
+  whole stem (e.g. `participants`, `dataset_description`)
 - `extension` — file extension
 - `path` — full file path
 - *(optional)* `json_path` — added by `..._json_rows_to_column_json_path`
@@ -170,7 +176,7 @@ cd bids-examples
 ### Development Utilities
 
 ```bash
-# Generate entity glob patterns from the BIDS schema (requires schema.json + jq)
+# Generate the schema-derived parser blocks (requires schema.json + jq)
 ./generate_entity_patterns.sh
 ```
 
@@ -245,18 +251,20 @@ it removes the rows that match all filters and keeps all other rows.
 ### Glob Pattern Usage
 
 ```bash
-# Enable extended globbing
-shopt -s extglob nullglob globstar
+# Enable extended globbing (save the caller's option first, restore after)
+saved_shopts=$(shopt -p extglob) || true
+shopt -s extglob
 
-# Build BIDS entity patterns (35 standard entities, defined inline in the parser)
-local entities=(
-  "*(_sub-+([a-zA-Z0-9]))"
-  "*(_tpl-+([a-zA-Z0-9]))"
-  # ... 33 more entities
-)
+# Match by schema suffix and extension only (both lists are generated from
+# schema.json by generate_entity_patterns.sh)
+local pattern="*${suffixes}${extensions}"
 
-# Find files
-local files=("${bidspath}"/**/${pattern})
+# Find files: 'find -L' follows symlinked directories (globstar does not) and
+# stops at link loops; dot names are pruned; 'sort -z' keeps the glob order.
+# Each basename is then tested against the extglob pattern.
+while IFS= read -r -d '' found; do
+  [[ ${found##*/} == ${pattern} ]] && files+=("${found}")
+done < <(find -L "${bidspath}" -mindepth 1 -name '.*' -prune -o -print0 | sort -z)
 ```
 
 ### AWK Integration
@@ -337,14 +345,17 @@ custom-entity extension guide, troubleshooting.
 
 ### generate_entity_patterns.sh
 
-Generates Bash glob patterns from the BIDS `schema.json`. Requires `schema.json`
-and `jq`. `schema.json` is the authoritative BIDS spec source.
+Generates the schema-derived blocks of the parser (entity key and name lists for
+the columns, the suffix and extension glob alternations, the datatype regex)
+from the BIDS `schema.json`. Requires `schema.json` and `jq`. `schema.json` is the authoritative BIDS spec source.
 
 ### custom/custom_entities.json.tpl
 
 Template for defining custom BIDS entities. Copy to `custom/custom_entities.json`
 to activate (the parser loads every `custom/*.json`). The `custom/` directory is
 found next to the real `libBIDS.sh` file, also when it is sourced through a symlink.
+Only `key` and `name` have an effect. `pattern` is accepted but is not used for
+matching (files are selected by suffix and extension only).
 
 ```json
 {
@@ -372,7 +383,8 @@ Validates BIDS compliance of example datasets. Features:
 
 - **Bash >= 4.3** (hard requirement: associative arrays, namerefs)
 - **AWK** (any POSIX awk: gawk, mawk, BSD awk)
-- **Core utils**: standard GNU tools (`grep`, `sed`, `tr`, `paste`, `sort`, ...)
+- **Core utils**: standard GNU tools (`grep`, `sed`, `tr`, `paste`, `sort`, ...);
+  the parser uses `find -L ... -print0 | sort -z` for file discovery
 
 ### Optional Dependencies
 
@@ -477,9 +489,10 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 ### Adding custom entities
 
 1. Copy `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
-2. Define each entity's `key` (short filename token, required), `name` (the column
-   header, required), and optionally `pattern` (Bash extended-glob). A `key` or
-   `name` that is the same as a standard entity, a fixed column or an earlier custom
+2. Define each entity's `key` (short filename token, required) and `name` (the
+   column header, required). The optional `pattern` field is not used for
+   matching: files are selected by suffix and extension only. A `key` or `name`
+   that is the same as a standard entity, a fixed column or an earlier custom
    entity is skipped with a warning to stderr.
 3. Source the library and call `libBIDSsh_parse_bids_to_table`; custom entities are
    appended after the standard ones.
@@ -513,7 +526,8 @@ libBIDSsh_json_to_associative_array "file.json" metadata
    nested files, matching `bids-validator`). Negation (`!`) does not specially block
    re-including a file under an already-excluded parent directory — each file's full
    relative path is tested independently. Escaped trailing whitespace (`\ `) is the
-   one gitignore corner not fully honored. Because the parser only globs valid-BIDS
+   one gitignore corner not fully honored. A directory-only pattern (trailing `/`)
+   also matches a directory-valued row (`.ds`, `.mefd`, `.ome.zarr`). Because the parser only globs valid-BIDS
    suffix+extension files, `.bidsignore` patterns targeting non-BIDS files are no-ops.
    Built-in default ignores follow `bids-validator` (`/sourcedata/`, `/code/`,
    `/stimuli/`, `/log/`, `/doc/`, `.**`, `!/.bidsignore`), root-anchored, except

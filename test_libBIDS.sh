@@ -360,6 +360,161 @@ test_parse_bids_to_table_func_gii() {
   return 0
 }
 
+# The test sets plain variables with the names of internal arrays.
+# shellcheck disable=SC2034,SC2128,SC2178
+test_parse_bids_to_table_no_leaks() {
+  # The parser and _libBIDSsh_parse_filename must not change the variables or
+  # the shell options of the caller.
+  local root
+  root=$(_make_bidsignore_fixture)
+  local out
+  out=$(
+    entities_order=EO entities_name_order=ENO entity_key=EK entity_name=EN
+    file=F key=K parts=P i=I
+    shopt -s extglob globstar
+    shopt -u nullglob
+    libBIDSsh_parse_bids_to_table "$root" >/dev/null
+    declare -A info
+    _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" info
+    echo "${entities_order} ${entities_name_order} ${entity_key} ${entity_name}" \
+      "${file} ${key} ${parts} ${i}"
+    shopt -p extglob nullglob globstar || true
+  )
+  assert_equals "EO ENO EK EN F K P I
+shopt -s extglob
+shopt -u nullglob
+shopt -s globstar" "$out" "caller variables and shell options must not change"
+}
+
+test_parse_bids_to_table_symlinked_dirs() {
+  # Files below a symbolic link to a directory must be in the table. A link
+  # loop must not make the parser loop forever.
+  local base root
+  base=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  root="${base}/ds"
+  mkdir -p "${base}/store/sub-02/anat" "${base}/store/fmriprep/sub-01/anat" \
+    "${root}/sub-01/anat" "${root}/derivatives"
+  : >"${base}/store/sub-02/anat/sub-02_T1w.nii.gz"
+  : >"${base}/store/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz"
+  : >"${root}/sub-01/anat/sub-01_T1w.nii.gz"
+  ln -s "${base}/store/sub-02" "${root}/sub-02"
+  ln -s "${base}/store/fmriprep" "${root}/derivatives/fmriprep"
+  ln -s .. "${root}/sub-01/anat/loop"
+
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "$root" 2>/dev/null |
+    awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/derivatives/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz
+${root}/sub-01/anat/sub-01_T1w.nii.gz
+${root}/sub-02/anat/sub-02_T1w.nii.gz" "$paths" \
+    "rows below symlinked directories, once each, in path order"
+}
+
+test_parse_bids_to_table_directory_recordings() {
+  # A directory-type recording (.ds, .mefd, .ome.zarr) is one row. The files
+  # inside it are not rows. A directory-only .bidsignore pattern ('*.ds/')
+  # drops the directory row, in the parser and in libBIDSsh_apply_bidsignore.
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  mkdir -p "${root}/sub-01/meg/sub-01_task-a_meg.ds/sub" \
+    "${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr/0"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.ds/sub-01_task-a_meg.eeg"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.ds/sub/sub-01_task-a_meg.json"
+  : >"${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr/0/sub-01_SPIM.json"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.json"
+
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.ds
+${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "directory recordings are rows, their contents are not"
+
+  printf '%s\n' '*.ds/' >"${root}/.bidsignore"
+  paths=$(libBIDSsh_parse_bids_to_table "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "'*.ds/' in .bidsignore drops the .ds directory row"
+
+  local raw
+  raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "$root")
+  paths=$(libBIDSsh_apply_bidsignore "$raw" "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "libBIDSsh_apply_bidsignore drops the .ds directory row for '*.ds/'"
+}
+
+test_parse_bids_to_table_core_files() {
+  # Table files (participants, samples, phenotype/*) and suffix-only sidecars
+  # (T1w.json) are rows. Their suffix is the whole stem. dataset_description.json
+  # gets suffix 'dataset_description', not the atlas suffix 'description'.
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  mkdir -p "${root}/sub-01/anat" "${root}/phenotype" "${root}/derivatives/fs"
+  local f
+  for f in participants.tsv participants.json samples.tsv samples.json \
+    phenotype/acds_adult.tsv phenotype/acds_adult.json dataset_description.json \
+    T1w.json acq-x_T1w.json README CHANGES genetic_info.json \
+    sub-01/participants.tsv sub-01/anat/sub-01_T1w.nii.gz \
+    derivatives/fs/participants.tsv derivatives/fs/dataset_description.json; do
+    : >"${root}/${f}"
+  done
+
+  local rows
+  rows=$(libBIDSsh_parse_bids_to_table "$root" |
+    awk -F '\t' -v root="${root}/" 'NR > 1 {
+      sub(root, "", $NF); print $1, $2, $3, $10, $(NF - 2), $(NF - 1), $NF
+    }' | LC_ALL=C sort)
+  assert_equals "NA NA NA NA T1w json T1w.json
+NA NA NA NA dataset_description json dataset_description.json
+NA NA NA NA participants json participants.json
+NA NA NA NA participants tsv participants.tsv
+NA NA NA NA samples json samples.json
+NA NA NA NA samples tsv samples.tsv
+NA NA NA acq-x T1w json acq-x_T1w.json
+NA anat sub-01 NA T1w nii.gz sub-01/anat/sub-01_T1w.nii.gz
+NA phenotype NA NA acds_adult json phenotype/acds_adult.json
+NA phenotype NA NA acds_adult tsv phenotype/acds_adult.tsv
+fs NA NA NA dataset_description json derivatives/fs/dataset_description.json
+fs NA NA NA participants tsv derivatives/fs/participants.tsv" "$rows" \
+    "core, table and suffix-only files with the stem as suffix"
+}
+
+test_parse_bids_to_table_discovery_bids_examples() {
+  # The same file discovery on real bids-examples datasets.
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds000246" |
+    awk -F '\t' -v root="${bids_examples}/ds000246/" 'NR > 1 && $NF ~ /\.ds(\/|$)/ {
+      sub(root, "", $NF); print $NF
+    }' | LC_ALL=C sort)
+  assert_equals "sub-0001/meg/sub-0001_task-AEF_run-01_meg.ds
+sub-0001/meg/sub-0001_task-AEF_run-02_meg.ds
+sub-emptyroom/meg/sub-emptyroom_task-noise_run-01_meg.ds" "$paths" \
+    "ds000246: the .ds directories are rows, the files inside them are not"
+
+  local rows
+  rows=$({
+    libBIDSsh_parse_bids_to_table "${bids_examples}/ds001"
+    libBIDSsh_parse_bids_to_table "${bids_examples}/ds000248"
+  } | awk -F '\t' -v ex="${bids_examples}/" '
+      $NF ~ /\/(ds001\/participants\.tsv|ds000248\/T1w\.json)$/ {
+        sub(ex, "", $NF); print $2, $(NF - 2), $(NF - 1), $NF
+      }')
+  assert_equals "NA participants tsv ds001/participants.tsv
+NA T1w json ds000248/T1w.json" "$rows" \
+    "ds001 participants.tsv and ds000248 root T1w.json are rows"
+
+  rows=$(libBIDSsh_parse_bids_to_table "${bids_examples}/pheno004" |
+    awk -F '\t' -v root="${bids_examples}/pheno004/" '$2 == "phenotype" {
+      sub(root, "", $NF); print $(NF - 2), $(NF - 1), $NF
+    }' | LC_ALL=C sort)
+  assert_equals "ace json phenotype/ace.json
+ace tsv phenotype/ace.tsv
+demographics json phenotype/demographics.json
+demographics tsv phenotype/demographics.tsv" "$rows" \
+    "pheno004: phenotype files have datatype 'phenotype'"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1465,6 +1620,11 @@ run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
 run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_to_table_func_gii
+run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_parse_bids_to_table_no_leaks
+run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test_parse_bids_to_table_symlinked_dirs
+run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_parse_bids_to_table_directory_recordings
+run_test "Public API: libBIDSsh_parse_bids_to_table core and table files" test_parse_bids_to_table_core_files
+run_test "Public API: libBIDSsh_parse_bids_to_table discovery on bids-examples" test_parse_bids_to_table_discovery_bids_examples
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement

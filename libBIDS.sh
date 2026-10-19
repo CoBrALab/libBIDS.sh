@@ -237,16 +237,20 @@ _libBIDSsh_parse_filename() {
   local path="$1"
   local -n arr="$2" # nameref to the associative array
 
-  # Extract the filename without path
-  local filename
-  filename=$(basename "${path}")
+  # Extract the filename without path. Parameter expansion is used instead of
+  # basename, dirname and tr, because a subprocess per file is slow.
+  local filename="${path##*/}"
 
   # Initialize the arrays
   arr=()
   local -a key_order=() # To maintain the order of keys
 
-  # Store the full path and filename
-  arr[path]=$(tr -s / <<<"${path}")
+  # Store the full path with runs of '/' collapsed to one (as 'tr -s /')
+  local clean_path="${path}"
+  while [[ ${clean_path} == *//* ]]; do
+    clean_path="${clean_path//\/\//\/}"
+  done
+  arr[path]="${clean_path}"
 
   arr[extension]="${filename#*.}"
 
@@ -254,8 +258,10 @@ _libBIDSsh_parse_filename() {
   # final component of the file's directory). Anchor to a whole path component
   # so an unrelated substring (e.g. "func" in "study_func/") cannot match.
   # ./generate_entity_patterns.sh -> datatype regex
-  local dir
-  dir=$(dirname "${path}")
+  local dir="."
+  if [[ ${clean_path} == */* ]]; then
+    dir="${clean_path%/*}"
+  fi
   if [[ ${dir} =~ (^|/)(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)$ ]]; then
     arr[datatype]="${BASH_REMATCH[2]}"
   else
@@ -273,7 +279,18 @@ _libBIDSsh_parse_filename() {
   local name_no_ext="${filename%%.*}"
 
   # Split into parts separated by _
-  IFS='_' read -ra parts <<<"${name_no_ext}"
+  local -a parts
+  local i
+  # Core and table files have no entities: their suffix is the whole stem
+  # (dataset_description, participants, samples, or the name of a phenotype
+  # table). Thus dataset_description.json does not look like an atlas
+  # '_description.json' file.
+  if [[ ${name_no_ext} =~ ^(dataset_description|participants|samples)$ ||
+    ${arr[datatype]} == "phenotype" ]]; then
+    parts=("${name_no_ext}")
+  else
+    IFS='_' read -ra parts <<<"${name_no_ext}"
+  fi
 
   # Process middle parts which are _<key>-<value>
   for ((i = 0; i < ${#parts[@]} - 1; i++)); do
@@ -778,6 +795,10 @@ libBIDSsh_apply_bidsignore() {
     local norm_p relpath
     norm_p=$(tr -s / <<<"${cols[path_idx]-}")
     relpath="${norm_p#"${norm_bidspath}"/}"
+    # A directory row gets a trailing '/' for directory-only patterns.
+    if [[ -d $norm_p ]]; then
+      relpath+=/
+    fi
     if ! _libBIDSsh_path_is_ignored "$relpath"; then
       printf '%s\n' "$line"
     fi
@@ -832,56 +853,13 @@ libBIDSsh_parse_bids_to_table() {
     return 1
   fi
 
-  # Build the pattern piece by piece
-  local base_pattern="*"
-
-  # Load custom entities from plugins
+  # Load custom entities from plugins. Only their key and name are used (as
+  # table columns); their glob 'pattern' is not used for matching.
   _libBIDSsh_load_custom_entities || return 1
 
-  # Entities components
-  # Extracted from schema with generate_entity_patterns.sh
-  local entities=(
-    "*(_sub-+([a-zA-Z0-9]))"
-    "*(_tpl-+([a-zA-Z0-9]))"
-    "*(_ses-+([a-zA-Z0-9]))"
-    "*(_cohort-+([a-zA-Z0-9]))"
-    "*(_sample-+([a-zA-Z0-9]))"
-    "*(_task-+([a-zA-Z0-9]))"
-    "*(_tracksys-+([a-zA-Z0-9]))"
-    "*(_acq-+([a-zA-Z0-9]))"
-    "*(_nuc-+([a-zA-Z0-9]))"
-    "*(_voi-+([a-zA-Z0-9]))"
-    "*(_ce-+([a-zA-Z0-9]))"
-    "*(_trc-+([a-zA-Z0-9]))"
-    "*(_stain-+([a-zA-Z0-9]))"
-    "*(_rec-+([a-zA-Z0-9]))"
-    "*(_dir-+([a-zA-Z0-9]))"
-    "*(_run-+([0-9]))"
-    "*(_mod-+([a-zA-Z0-9]))"
-    "*(_echo-+([0-9]))"
-    "*(_flip-+([0-9]))"
-    "*(_inv-+([0-9]))"
-    "*(_mt-+([a-zA-Z0-9]))"
-    "*(_part-+([a-zA-Z0-9]))"
-    "*(_proc-+([a-zA-Z0-9]))"
-    "*(_hemi-+([a-zA-Z0-9]))"
-    "*(_space-+([a-zA-Z0-9]))"
-    "*(_split-+([0-9]))"
-    "*(_recording-+([a-zA-Z0-9]))"
-    "*(_chunk-+([0-9]))"
-    "*(_atlas-+([a-zA-Z0-9]))"
-    "*(_seg-+([a-zA-Z0-9]))"
-    "*(_scale-+([a-zA-Z0-9]))"
-    "*(_res-+([a-zA-Z0-9]))"
-    "*(_den-+([a-zA-Z0-9]))"
-    "*(_label-+([a-zA-Z0-9]))"
-    "*(_desc-+([a-zA-Z0-9]))"
-  )
-
-  # Add custom entities from plugins
-  for entity_pattern in ${CUSTOM_ENTITIES[@]+"${CUSTOM_ENTITIES[@]}"}; do
-    entities+=("$entity_pattern")
-  done
+  # Files are matched by suffix and extension only: '*' + '_<suffix>' +
+  # '<extension>'. Entity tokens are not checked here (permissive matching);
+  # _libBIDSsh_parse_filename extracts them from the filename.
 
   # Suffixes from schema.json
   # jq -r .objects.suffixes.[].value schema.json | paste -s -d'|'
@@ -893,37 +871,75 @@ libBIDSsh_parse_bids_to_table() {
   # Matches schema 2.1.0-dev (BIDS 1.11.3-dev) and stable 2.0.0 (BIDS 1.11.2)
   local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.func.gii|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
 
-  # Piece together the pattern
-  local pattern=${base_pattern}
-  for entry in "${entities[@]}"; do
-    pattern+=${entry}
-  done
-  pattern+=${suffixes}
-  pattern+=${extensions}
+  local pattern="*${suffixes}${extensions}"
+  # A file whose whole stem is a suffix: an inheritance-principle sidecar with
+  # no entities, such as T1w.json or events.json (at any level).
+  local stem_pattern="${suffixes#_}${extensions}"
+  # Tabular files (schema rules.files.common.tables with a stem): participants
+  # and samples, and phenotype/<name>, with extension .tsv or .json. They are
+  # matched at the dataset root and at the root of a derivatives/<pipeline>.
+  local table_pattern="?(?(*/)derivatives/+([!/])/)"
+  table_pattern+="@(participants|samples|phenotype/+([!/])).@(tsv|json)"
 
+  # Save the caller's extglob option and restore it after the match.
+  # 'shopt -p' returns non-zero when an option is off, thus '|| true'.
+  local saved_shopts
+  saved_shopts=$(shopt -p extglob) || true
   shopt -s extglob
-  shopt -s nullglob
-  shopt -s globstar
 
-  # shellcheck disable=SC2206
-  local files=("${bidspath}"/**/${pattern})
+  # List the files and directories with 'find -L', which follows symbolic
+  # links to directories (bash globstar does not) and stops at a link loop.
+  # Names that start with '.' are pruned, as globstar without dotglob does.
+  # 'sort -z' uses the collation of the locale, as the glob sort did, so the
+  # row order is the same as with "${bidspath}"/**/${pattern}.
+  # A directory-type recording (schema extensions that end in '/': .ds,
+  # .mefd, .ome.zarr) is one BIDS file: it is listed, but find does not go
+  # into it, so the files inside it are not rows.
+  # find has no '--', thus a path that starts with '-' gets a './' prefix.
+  local find_root="${bidspath}"
+  if [[ ${find_root} == -* ]]; then
+    find_root="./${find_root}"
+  fi
+  local -a files=()
+  local found rel
+  while IFS= read -r -d '' found; do
+    rel="${found#"${find_root}"}"
+    rel="${rel#/}"
+    # shellcheck disable=SC2053
+    if [[ ${found##*/} == ${pattern} || ${found##*/} == ${stem_pattern} ||
+      ${rel} == ${table_pattern} ]]; then
+      # Make the path as the glob did: "${bidspath}/<relative path>"
+      files+=("${bidspath}/${rel}")
+    fi
+  done < <(find -L "${find_root}" -mindepth 1 \( -name '.*' -prune \) -o \
+    \( -type d \( -name '*.ds' -o -name '*.mefd' -o -name '*.ome.zarr' \) \
+    -print0 -prune \) -o -print0 | sort -z)
 
-  shopt -u extglob
-  shopt -u nullglob
-  shopt -u globstar
+  eval "${saved_shopts}"
 
   # Drop files excluded by the dataset's .bidsignore (and built-in default
   # ignores) unless disabled. Paths are matched relative to the dataset root.
   if ((honor_bidsignore)); then
     _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
     if ((${#_LIBBIDSSH_BIDSIGNORE_REGEX[@]} > 0)); then
-      local norm_bidspath
-      norm_bidspath=$(tr -s / <<<"${bidspath%/}")
+      # Collapse runs of '/' (as 'tr -s /') without a subprocess per file.
+      local norm_bidspath="${bidspath%/}"
+      while [[ ${norm_bidspath} == *//* ]]; do
+        norm_bidspath="${norm_bidspath//\/\//\/}"
+      done
       local -a kept_files=()
       local f relpath
       for f in ${files[@]+"${files[@]}"}; do
-        relpath=$(tr -s / <<<"$f")
+        relpath="$f"
+        while [[ ${relpath} == *//* ]]; do
+          relpath="${relpath//\/\//\/}"
+        done
         relpath="${relpath#"${norm_bidspath}"/}"
+        # A directory row (e.g. a .ds recording) gets a trailing '/', so that
+        # a directory-only pattern such as '*.ds/' matches it.
+        if [[ -d $f ]]; then
+          relpath+=/
+        fi
         if ! _libBIDSsh_path_is_ignored "$relpath"; then
           kept_files+=("$f")
         fi
@@ -939,6 +955,7 @@ libBIDSsh_parse_bids_to_table() {
   # Order of entities from generate_entity_patterns.sh.
   # entities_order holds entity keys (filename tokens); entities_name_order holds
   # entity names (the long, canonical column headers). Both in canonical BIDS order.
+  local entities_name_order entities_order entity_key entity_name
   entities_name_order=$'subject\ttemplate\tsession\tcohort\tsample\ttask\ttracksys\tacquisition\tnucleus\tvolume\tceagent\ttracer\tstain\treconstruction\tdirection\trun\tmodality\techo\tflip\tinversion\tmtransfer\tpart\tprocessing\themisphere\tspace\tsplit\trecording\tchunk\tatlas\tsegmentation\tscale\tresolution\tdensity\tlabel\tdescription'
   entities_order="sub tpl ses cohort sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk atlas seg scale res den label desc"
 
@@ -952,8 +969,9 @@ libBIDSsh_parse_bids_to_table() {
   done
 
   printf "derivatives\tdatatype\t%s\tsuffix\textension\tpath\n" "${entities_name_order}"
+  local file key
+  local -A file_info
   for file in ${files[@]+"${files[@]}"}; do
-    declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
     for key in derivatives datatype ${entities_order} suffix extension path; do
       if [[ "${file_info[${key}]+abc}" ]]; then

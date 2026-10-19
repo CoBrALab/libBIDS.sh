@@ -8,6 +8,9 @@
 #   entity key  = schema .name        (e.g. "sub")  -> filename token
 #   entity name = schema object key   (e.g. "subject") -> table column header
 # rules.entities provides the canonical filename ordering of entities.
+#
+# The parser matches files by suffix and extension only. The entity lists are
+# used for the table columns, not for matching.
 
 set -euo pipefail
 
@@ -15,22 +18,10 @@ set -euo pipefail
 mapfile -t entity_names < <(jq -r '.rules.entities[]' schema.json)
 entity_keys=()
 
-echo "### entities=( ) glob patterns ###"
 for entity in "${entity_names[@]}"; do
-  entity_key=$(jq -r ".objects.entities.${entity}.name" schema.json)
-  entity_keys+=("${entity_key}")
-  entity_format=$(jq -r ".objects.entities.${entity}.format" schema.json)
-  if [[ ${entity_format} == "label" ]]; then
-    echo "    \"*(_${entity_key}-+([a-zA-Z0-9]))\""
-  elif [[ ${entity_format} == "index" ]]; then
-    echo "    \"*(_${entity_key}-+([0-9]))\""
-  else
-    echo "Unrecognized entity_format ${entity_format}" 1>&2
-    exit 1
-  fi
+  entity_keys+=("$(jq -r ".objects.entities.${entity}.name" schema.json)")
 done
 
-echo
 echo "### entities_order (entity keys, space separated) ###"
 printf "%s " "${entity_keys[@]}"
 echo
@@ -51,6 +42,16 @@ printf '@(%s)\n' "$(jq -r '.objects.extensions[].value' schema.json \
   | grep -vxF -e '.*' -e '/' -e '' \
   | sed 's:/$::' \
   | paste -sd'|')"
+
+echo
+echo "### directory-type extensions (find prunes these; the directory is one row) ###"
+jq -r '.objects.extensions[].value' schema.json | grep -v -x -F '/' | sed -n 's:/$::p' \
+  | paste -sd' '
+
+echo
+echo "### table stems (rules.files.common.tables with a stem; '*' is phenotype/<name>) ###"
+jq -r '.rules.files.common.tables[] | select(.stem != null) | .stem' schema.json \
+  | paste -sd' '
 
 echo
 echo "### datatype regex (anchored to a whole path component; for _libBIDSsh_parse_filename) ###"
