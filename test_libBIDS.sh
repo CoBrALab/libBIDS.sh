@@ -345,6 +345,18 @@ test_parse_bids_to_table_func_gii() {
     }' <<<"$table")
   assert_equals "prep	hemi-L	space-fsaverage	bold" "$gii_row" \
     ".func.gii row should have derivatives, hemisphere, space and suffix" || return 1
+
+  # Real data: ds000001-fmriprep has .func.gii files. Its .bidsignore
+  # excludes '*_bold.func.gii', thus parse it with --no-bidsignore.
+  table=$(libBIDSsh_parse_bids_to_table --no-bidsignore "${bids_examples}/ds000001-fmriprep")
+  gii_row=$(awk -F '\t' -v OFS='\t' '
+    NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+    $col["path"] ~ /sub-11_task-balloonanalogrisktask_run-1_space-fsaverage5_hemi-L_bold\.func\.gii$/ {
+      print $col["subject"], $col["task"], $col["run"], $col["hemisphere"],
+        $col["space"], $col["suffix"], $col["extension"]
+    }' <<<"$table")
+  assert_equals "sub-11	task-balloonanalogrisktask	run-1	hemi-L	space-fsaverage5	bold	func.gii" \
+    "$gii_row" "ds000001-fmriprep .func.gii row should be in the table" || return 1
   return 0
 }
 
