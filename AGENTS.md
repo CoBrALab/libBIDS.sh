@@ -496,6 +496,10 @@ libBIDSsh_json_to_associative_array "file.json" metadata
    relative path is tested independently. Escaped trailing whitespace (`\ `) is the
    one gitignore corner not fully honored. Because the parser only globs valid-BIDS
    suffix+extension files, `.bidsignore` patterns targeting non-BIDS files are no-ops.
+   Built-in default ignores follow `bids-validator` (`/sourcedata/`, `/code/`,
+   `/stimuli/`, `/log/`, `/doc/`, `.**`, `!/.bidsignore`), root-anchored, except
+   that `/derivatives/` is not ignored. `docs/` and `logs/` (schema opaque dirs)
+   are not ignored by default.
 
 ## Start Here (for AI assistants)
 

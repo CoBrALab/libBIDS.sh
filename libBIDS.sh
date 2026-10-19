@@ -617,11 +617,20 @@ _libBIDSsh_compile_bidsignore() {
   _LIBBIDSSH_BIDSIGNORE_REGEX=()
   _LIBBIDSSH_BIDSIGNORE_NEG=()
 
-  # Built-in defaults, mirroring bids-validator's addDefaults list. Note that
-  # derivatives/ is intentionally NOT ignored (libBIDS treats it as first-class).
+  # Built-in defaults, from bids-validator (src/files/ignore.ts). Its 'ignore'
+  # group is '/sourcedata/' '/code/' '/stimuli/' '/log/' '/doc/' (anchored to the
+  # dataset root) and its 'prune' group is '.**' and '!/.bidsignore'. Differences:
+  #   - '/derivatives/' is NOT ignored: libBIDS treats derivatives as first-class.
+  #     Because the patterns are root-anchored, code/, sourcedata/, log/ etc.
+  #     inside derivatives/<pipeline>/ (or inside sub-*/) are kept.
+  #   - The validator does not descend into pruned paths. Here the prune patterns
+  #     are ordinary patterns, so a later '!' line in .bidsignore can re-include.
+  #   - The schema (rules.directories.raw) marks 'docs' and 'logs' as opaque,
+  #     but the validator ignores 'doc' and 'log'. The validator list is used.
   if [[ "$use_defaults" == "1" ]]; then
     local default_pattern
-    for default_pattern in '.git**' '.*' 'sourcedata/' 'code/' 'stimuli/' 'log/'; do
+    for default_pattern in '/sourcedata/' '/code/' '/stimuli/' '/log/' '/doc/' \
+      '.**' '!/.bidsignore'; do
       _libBIDSsh_compile_bidsignore_line "$default_pattern"
     done
   fi
@@ -679,12 +688,15 @@ libBIDSsh_apply_bidsignore() {
   local norm_bidspath
   norm_bidspath=$(tr -s / <<<"${bidspath%/}")
 
+  # Split on a non-whitespace separator: with IFS=$'\t', 'read' merges runs of
+  # tabs, so an empty field would shift the path column.
+  local sep=$'\x1f'
   local line lineno=0 path_idx=-1
   while IFS= read -r line; do
     lineno=$((lineno + 1))
     if ((lineno == 1)); then
       local -a hcols
-      IFS=$'\t' read -r -a hcols <<<"$line"
+      IFS="$sep" read -r -a hcols <<<"${line//$'\t'/$sep}"
       local hi
       for hi in "${!hcols[@]}"; do
         [[ "${hcols[hi]}" == "path" ]] && {
@@ -700,9 +712,9 @@ libBIDSsh_apply_bidsignore() {
       continue
     fi
     local -a cols
-    IFS=$'\t' read -r -a cols <<<"$line"
+    IFS="$sep" read -r -a cols <<<"${line//$'\t'/$sep}"
     local norm_p relpath
-    norm_p=$(tr -s / <<<"${cols[path_idx]}")
+    norm_p=$(tr -s / <<<"${cols[path_idx]-}")
     relpath="${norm_p#"${norm_bidspath}"/}"
     if ! _libBIDSsh_path_is_ignored "$relpath"; then
       printf '%s\n' "$line"

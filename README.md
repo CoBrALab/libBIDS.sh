@@ -81,7 +81,7 @@ table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 **Options:**
 
 - `--no-bidsignore`: Do not honor the dataset's `.bidsignore` file or the built-in default ignores (parse every BIDS-shaped file).
-- `--no-default-ignores`: Honor the dataset's `.bidsignore` but skip the built-in default ignores (`sourcedata/`, `code/`, `stimuli/`, `log/`, dotfiles, `.git`).
+- `--no-default-ignores`: Honor the dataset's `.bidsignore` but skip the built-in default ignores (`/sourcedata/`, `/code/`, `/stimuli/`, `/log/`, `/doc/` at the dataset root, and dotfiles `.**`).
 
 By default the parser honors a root-level `.bidsignore` and the built-in default
 ignores (see [`.bidsignore` support](#bidsignore-support) below).
@@ -173,11 +173,24 @@ cleaned=$(libBIDSsh_drop_na_columns "$table_data")
 A BIDS dataset may carry a root-level [`.bidsignore`](https://bids-specification.readthedocs.io/en/stable/derivatives/introduction.html#bidsignore)
 file listing **gitignore-style patterns** for files that are not part of the BIDS
 standard. `libBIDSsh_parse_bids_to_table` honors it by default and also applies a
-built-in list of default ignores, matching the behavior of `bids-validator`.
+built-in list of default ignores, based on the defaults of `bids-validator`
+(`src/files/ignore.ts`).
 
-**Built-in default ignores:** `.git**`, `.*` (dotfiles), `sourcedata/`, `code/`,
-`stimuli/`, `log/`. Note that `derivatives/` is intentionally **not** ignored —
-libBIDS.sh treats derivatives as first-class data.
+**Built-in default ignores:** `/sourcedata/`, `/code/`, `/stimuli/`, `/log/`,
+`/doc/`, `.**` (dotfiles and dot-directories at any depth) and `!/.bidsignore`.
+The directory patterns are anchored to the dataset root, so directories with the
+same name below the root (for example `derivatives/<pipeline>/code/`,
+`derivatives/<pipeline>/sourcedata/` or `sub-01/log/`) are **not** ignored.
+Differences from `bids-validator`:
+
+- `derivatives/` is intentionally **not** ignored — libBIDS.sh treats derivatives
+  as first-class data.
+- `bids-validator` does not look inside dotfile paths at all ("prune"). libBIDS.sh
+  treats `.**` as an ordinary pattern, so a later `!` line in `.bidsignore` can
+  re-include a path below a dot-directory.
+- The BIDS schema marks `docs/` and `logs/` as opaque directories, but
+  `bids-validator` (and libBIDS.sh) ignores `doc/` and `log/`. Add `/docs/` or
+  `/logs/` to `.bidsignore` if a dataset uses them.
 
 **Supported gitignore syntax:** blank lines and `#` comments; `*` and `?` (which do
 not cross `/`); `**` whole-segment globstar (crosses directories); `[...]` bracket
