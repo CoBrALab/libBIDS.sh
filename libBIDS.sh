@@ -1311,9 +1311,37 @@ libBIDSsh_json_to_associative_array() {
 
 # bash "if __main__" implementation
 if ! (return 0 2>/dev/null); then
+  _libBIDSsh_usage() {
+    # Print the command-line usage to stdout
+    # Usage: _libBIDSsh_usage
+    cat <<'EOF'
+Usage: libBIDS.sh [OPTIONS] [--] <bids_dataset_dir>
+
+Parse a BIDS dataset and write it as a TSV table to stdout.
+
+Options:
+  --no-bidsignore        do not honor the dataset's .bidsignore or defaults
+  --no-default-ignores   honor .bidsignore but skip the built-in default ignores
+  -h, --help             show this help and exit
+  --                     end of options (use for a path that starts with "-")
+EOF
+  }
+
   if [[ $# -eq 0 ]]; then
-    echo 'error: the first argument must be a path to a bids dataset'
+    echo 'error: the first argument must be a path to a bids dataset' >&2
+    _libBIDSsh_usage >&2
     exit 1
   fi
+  # Look for -h/--help among the options (stop at "--").
+  for _libBIDSsh_arg in "$@"; do
+    case "${_libBIDSsh_arg}" in
+      --) break ;;
+      -h | --help)
+        _libBIDSsh_usage
+        exit 0
+        ;;
+    esac
+  done
+  unset _libBIDSsh_arg
   libBIDSsh_parse_bids_to_table "$@"
 fi
