@@ -149,7 +149,8 @@ libBIDSsh_parse_bids_to_table path/to/bids/dataset
 # Get the bids-examples submodule (once per clone)
 git submodule update --init
 
-# Run the unit test suite (sources libBIDS.sh, self-contained runner)
+# Run the unit test suite (sources libBIDS.sh, self-contained runner).
+# It works from any CWD and stops with an error if bids-examples/ is missing.
 ./test_libBIDS.sh
 
 # Also run the suite with bash 4.3 (the documented minimum) if available
@@ -367,6 +368,10 @@ run it directly.
 
 - Unit tests live in `test_libBIDS.sh` (run with `./test_libBIDS.sh`); BIDS
   compliance is validated separately via the external bids-validator.
+- `run_test` runs each test in a subshell with `set -e`, and `assert_*` record a
+  failure flag, so any failed assertion or command fails the test. Use
+  `skip_test "<reason>"` to skip a test, use `${bids_examples}/<dataset>` for
+  example datasets, and create fixtures under `${test_tmpdir}` (removed on exit).
 - CI: GitHub Actions (`.github/workflows/tests.yml`) runs on each push to
   `master` and each pull request (no branch filter, so stacked PRs also run).
   Jobs: unit tests and a parse of every bids-examples dataset (matrix of bash

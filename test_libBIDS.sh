@@ -5,12 +5,20 @@ set -euo pipefail
 # Avoid matching current dir during glob tests if it isn't expected
 shopt -u nullglob
 
+# Resolve paths from the directory of this script, not from the CWD.
+test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bids_examples="${test_dir}/bids-examples"
+
 # shellcheck disable=SC1091
-source "libBIDS.sh"
+source "${test_dir}/libBIDS.sh"
+
+# All fixtures go below this directory; it is removed on exit.
+test_tmpdir="$(mktemp -d)"
+trap 'rm -rf "${test_tmpdir}"' EXIT
 
 # The example datasets come from the bids-examples git submodule.
-if [[ ! -d bids-examples/ds001 ]]; then
-  echo "Error: bids-examples/ is missing. Run: git submodule update --init" >&2
+if [[ ! -d "${bids_examples}/ds001" ]]; then
+  echo "Error: ${bids_examples} is missing. Run: git submodule update --init" >&2
   exit 1
 fi
 
@@ -18,20 +26,50 @@ fi
 tests_run=0
 tests_passed=0
 tests_failed=0
+tests_skipped=0
+
+# Exit status a test uses to report a skip (see skip_test).
+readonly SKIP_STATUS=77
 
 run_test() {
+  # Run one test function and record PASS, FAIL or SKIP.
+  # The test runs in a subshell with errexit on and outside of any
+  # conditional context ("if", "||", ...). Thus a failed command fails the
+  # test. An assertion that fails also fails the test, even when its status
+  # is not checked, because assert_* set _assertion_failed.
   local name="$1"
   local func="$2"
+  local rc=0
 
   tests_run=$((tests_run + 1))
   echo "Running $name..."
-  if $func; then
+  set +e
+  (
+    set -e
+    _assertion_failed=0
+    "$func"
+    ((_assertion_failed == 0))
+  )
+  rc=$?
+  set -e
+
+  if ((rc == 0)); then
     echo "  [PASS]"
     tests_passed=$((tests_passed + 1))
+  elif ((rc == SKIP_STATUS)); then
+    echo "  [SKIP]"
+    tests_skipped=$((tests_skipped + 1))
   else
     echo "  [FAIL]"
     tests_failed=$((tests_failed + 1))
   fi
+}
+
+skip_test() {
+  # Stop the current test and report it as skipped.
+  # Usage: skip_test "reason"
+  echo "    Skip: $1"
+  exit "${SKIP_STATUS}"
 }
 
 assert_equals() {
@@ -43,6 +81,7 @@ assert_equals() {
     echo "    Assertion failed: $msg"
     echo "      Expected: '$expected'"
     echo "      Actual:   '$actual'"
+    _assertion_failed=1
     return 1
   fi
   return 0
@@ -57,6 +96,7 @@ assert_contains() {
     echo "    Assertion failed: $msg"
     echo "      Expected to contain: '$substring'"
     echo "      Actual string:       '${string:0:200}...'"
+    _assertion_failed=1
     return 1
   fi
   return 0
@@ -107,7 +147,7 @@ test_parse_filename_datatype_derivatives() {
 }
 
 test_parse_bids_to_table() {
-  local bids_dir="bids-examples/ds001"
+  local bids_dir="${bids_examples}/ds001"
   local table
   table=$(libBIDSsh_parse_bids_to_table "$bids_dir")
 
@@ -117,9 +157,19 @@ test_parse_bids_to_table() {
   # Check header
   local header
   header=$(head -n 1 <<<"$table")
-  assert_contains "sub" "$header" "header should contain sub" || return 1
-  assert_contains "task" "$header" "header should contain task" || return 1
-  assert_contains "path" "$header" "header should contain path" || return 1
+  # Columns use entity names (subject), not entity keys (sub).
+  local fields=$'\t'"${header}"$'\t'
+  assert_equals "derivatives	datatype	subject" "$(cut -f 1-3 <<<"$header")" \
+    "header should start with derivatives, datatype, subject" || return 1
+  assert_contains $'\tsession\t' "$fields" "header should contain session" || return 1
+  assert_contains $'\ttask\t' "$fields" "header should contain task" || return 1
+  assert_equals "suffix	extension	path" \
+    "$(awk -F '\t' -v OFS='\t' '{ print $(NF - 2), $(NF - 1), $NF }' <<<"$header")" \
+    "header should end with suffix, extension, path" || return 1
+  if [[ "$fields" == *$'\tsub\t'* || "$fields" == *$'\tses\t'* ]]; then
+    echo "    Assertion failed: header must not use entity keys sub/ses"
+    return 1
+  fi
 
   # Verify size roughly (this is a known dataset)
   local row_count
@@ -181,7 +231,7 @@ A	B
 A
 1" "$out" "table_filter without -r should keep col1" || return 1
 
-  err=$( (set -u; libBIDSsh_parse_bids_to_table "bids-examples/ds001" >/dev/null) 2>&1)
+  err=$( (set -u; libBIDSsh_parse_bids_to_table "${bids_examples}/ds001" >/dev/null) 2>&1)
   assert_equals "" "$err" "parser without custom entities must not error" || return 1
 
   out=$(
@@ -219,7 +269,7 @@ A	C
 }
 
 test_extension_json_rows_to_column_json_path() {
-  local table="extension	path	sub
+  local table="extension	path	subject
 nii.gz	/path/to/data.nii.gz	sub-1
 json	/path/to/data.json	sub-1
 nii.gz	/path/to/other.nii.gz	sub-2"
@@ -227,21 +277,23 @@ nii.gz	/path/to/other.nii.gz	sub-2"
   local updated
   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
 
-  assert_contains "json_path" "$updated" "should add json_path column" || return 1
-  assert_contains "/path/to/data.json" "$updated" "should map json path to nii.gz row" || return 1
-  assert_contains "NA" "$updated" "sub-2 should have NA for json_path" || return 1
+  # The json row is removed, its path goes to the matching row, and a row
+  # without a sidecar gets NA.
+  assert_equals "extension	path	subject	json_path
+nii.gz	/path/to/data.nii.gz	sub-1	/path/to/data.json
+nii.gz	/path/to/other.nii.gz	sub-2	NA" "$updated" "should fold json rows into json_path" || return 1
 
   return 0
 }
 
 test_table_column_to_array() {
-  local table="sub	ses
+  local table="subject	session
 sub-01	ses-1
 sub-01	ses-2
 sub-02	ses-1"
 
   declare -a subjects
-  libBIDSsh_table_column_to_array "$table" "sub" subjects true true
+  libBIDSsh_table_column_to_array "$table" "subject" subjects true true
   assert_equals "2" "${#subjects[@]}" "should have 2 unique subjects" || return 1
   assert_equals "sub-01" "${subjects[0]}" "first should be sub-01" || return 1
   assert_equals "sub-02" "${subjects[1]}" "second should be sub-02" || return 1
@@ -250,43 +302,57 @@ sub-02	ses-1"
 }
 
 test_table_iterator() {
-  local table="sub	ses
+  # Input is not sorted, so the order shows that the sort column is used.
+  local table="subject	session
+sub-02	ses-2
 sub-01	ses-1
-sub-02	ses-2"
+sub-03	ses-3"
 
   declare -A row
   local count=0
   local subj_str=""
-  while libBIDSsh_table_iterator "$table" row "sub"; do
+  local ses_str=""
+  while libBIDSsh_table_iterator "$table" row "subject"; do
     count=$((count + 1))
-    subj_str="${subj_str}${row[sub]} "
+    subj_str="${subj_str}${row[subject]} "
+    ses_str="${ses_str}${row[session]} "
   done
 
-  assert_equals "2" "$count" "should iterate 2 times" || return 1
-  assert_equals "sub-01 sub-02 " "$subj_str" "should extract sub values" || return 1
+  assert_equals "3" "$count" "should iterate 3 times" || return 1
+  assert_equals "sub-01 sub-02 sub-03 " "$subj_str" "should sort by subject" || return 1
+  assert_equals "ses-1 ses-2 ses-3 " "$ses_str" "session should stay with its row" || return 1
+
+  subj_str=""
+  while libBIDSsh_table_iterator "$table" row "subject" -r; do
+    subj_str="${subj_str}${row[subject]} "
+  done
+  assert_equals "sub-03 sub-02 sub-01 " "$subj_str" "-r should reverse the sort" || return 1
   return 0
 }
 
 test_json_to_associative_array() {
-  local json_file="bids-examples/ds001/dataset_description.json"
-  if [[ ! -f "$json_file" ]]; then
-    echo "    Skip: $json_file not found"
-    return 1 # Fails if we don't have the submodule checked out
-  fi
+  command -v jq >/dev/null 2>&1 || skip_test "jq not found"
+  local json_file
+  json_file="$(mktemp -d "${test_tmpdir}/json.XXXXXX")/dataset_description.json"
+  printf '%s\n' '{"Name": "Test dataset", "BIDSVersion": "1.0.2",' \
+    '"RepetitionTime": 2.5, "Authors": ["A", "B"]}' >"$json_file"
 
   declare -A json_data
   libBIDSsh_json_to_associative_array "$json_file" json_data
 
-  assert_equals "string" "${json_data[BIDSVersion]%\:*}" "BIDSVersion should be present as string" || return 1
-  assert_equals "string" "${json_data[Name]%\:*}" "Name should be present as string" || return 1
+  assert_equals "4" "${#json_data[@]}" "should have 4 keys" || return 1
+  assert_equals "string:Test dataset" "${json_data[Name]:-}" "Name value" || return 1
+  assert_equals "string:1.0.2" "${json_data[BIDSVersion]:-}" "BIDSVersion value" || return 1
+  assert_equals "number:2.5" "${json_data[RepetitionTime]:-}" "RepetitionTime value" || return 1
+  assert_equals "array:A,B" "${json_data[Authors]:-}" "Authors value" || return 1
   return 0
 }
 
 # Build a small self-contained BIDS-shaped fixture with a .bidsignore.
-# Echoes the temp directory path; caller is responsible for removing it.
+# Echoes the temp directory path (below test_tmpdir, removed on exit).
 _make_bidsignore_fixture() {
   local root
-  root=$(mktemp -d)
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
   local files=(
     "sub-01/func/sub-01_task-rest_bold.nii.gz"
     "sub-02/func/sub-02_task-rest_bold.nii.gz"
@@ -311,7 +377,7 @@ _row_count() { awk 'NR > 1 && $0 != "" { c++ } END { print c + 0 }' <<<"$1"; }
 
 test_bidsignore_matcher() {
   local root
-  root=$(mktemp -d)
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
   printf '%s\n' '*_bold.nii.gz' '!sub-01_task-rest_bold.nii.gz' 'derivatives/junk/' \
     'a/b/anchored.nii.gz' '**/deep_FLASH.nii.gz' >"${root}/.bidsignore"
   _libBIDSsh_compile_bidsignore "$root" 1
@@ -401,6 +467,7 @@ echo "Test summary:"
 echo "Executed: $tests_run"
 echo "Passed:   $tests_passed"
 echo "Failed:   $tests_failed"
+echo "Skipped:  $tests_skipped"
 
 if ((tests_failed > 0)); then
   exit 1
