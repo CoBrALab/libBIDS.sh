@@ -146,6 +146,37 @@ test_parse_filename_datatype_derivatives() {
   return 0
 }
 
+test_parse_filename_relative_root() {
+  # With the dataset root as third argument, datatype and derivatives come
+  # from the path relative to the root, not from the directories above it.
+  declare -A a
+  _libBIDSsh_parse_filename "/x/derivatives/study/sub-01/anat/sub-01_T1w.nii.gz" a \
+    "/x/derivatives/study"
+  assert_equals "NA" "${a[derivatives]:-}" "'derivatives/' above the root is not a pipeline" || return 1
+  assert_equals "anat" "${a[datatype]:-}" "datatype below the root is anat" || return 1
+  assert_equals "/x/derivatives/study/sub-01/anat/sub-01_T1w.nii.gz" "${a[path]:-}" \
+    "path column keeps the full path" || return 1
+
+  # Nested derivatives: the innermost pipeline is the label.
+  declare -A b
+  _libBIDSsh_parse_filename \
+    "/x/ds/derivatives/a/derivatives/b/sub-01/anat/sub-01_desc-x_T1w.nii.gz" b "/x/ds"
+  assert_equals "b" "${b[derivatives]:-}" "nested derivatives give the innermost pipeline" || return 1
+
+  # A root-level file has no datatype, also when the root is named 'anat'.
+  declare -A c
+  _libBIDSsh_parse_filename "/x/anat/task-rest_bold.json" c "/x/anat"
+  assert_equals "NA" "${c[datatype]:-}" "root-level file has datatype NA" || return 1
+
+  # Equivalent spellings of the root give the same values.
+  declare -A d
+  _libBIDSsh_parse_filename "./ds//derivatives/fs/sub-01/anat/sub-01_T1w.nii.gz" d "ds/"
+  assert_equals "fs" "${d[derivatives]:-}" "root 'ds/' matches path './ds//...'" || return 1
+  declare -A e
+  _libBIDSsh_parse_filename "derivatives/fs/anat/x_T1w.json" e "."
+  assert_equals "fs" "${e[derivatives]:-}" "root '.' with a relative path" || return 1
+}
+
 test_parse_bids_to_table() {
   local bids_dir="${bids_examples}/ds001"
   local table
@@ -513,6 +544,57 @@ ace tsv phenotype/ace.tsv
 demographics json phenotype/demographics.json
 demographics tsv phenotype/demographics.tsv" "$rows" \
     "pheno004: phenotype files have datatype 'phenotype'"
+}
+
+test_parse_bids_to_table_relative_columns() {
+  # A dataset stored below a 'derivatives/<name>/' directory, or in a
+  # directory named like a datatype, gets the same derivatives and datatype
+  # columns for an absolute and a relative bidspath.
+  local base root
+  base=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  root="${base}/derivatives/anat"
+  local f
+  for f in sub-01/anat/sub-01_T1w.nii.gz task-rest_bold.json \
+    derivatives/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz \
+    derivatives/fmriprep/derivatives/nested/sub-01/anat/sub-01_desc-x_T1w.nii.gz; do
+    mkdir -p "$(dirname "${root}/${f}")"
+    : >"${root}/${f}"
+  done
+
+  # Columns: derivatives, datatype, file name (the path differs by spelling).
+  local expected="NA NA task-rest_bold.json
+NA anat sub-01_T1w.nii.gz
+fmriprep anat sub-01_desc-preproc_T1w.nii.gz
+nested anat sub-01_desc-x_T1w.nii.gz"
+  local spelling rows
+  for spelling in "${root}" "${root}/" "//${root}" "." "./" "../anat"; do
+    rows=$(cd "${root}" && libBIDSsh_parse_bids_to_table "${spelling}" |
+      awk -F '\t' 'NR > 1 { n = split($NF, p, "/"); print $1, $2, p[n] }' |
+      LC_ALL=C sort)
+    assert_equals "${expected}" "${rows}" "derivatives/datatype for bidspath '${spelling}'" || return 1
+  done
+}
+
+test_parse_bids_to_table_relative_columns_bids_examples() {
+  # A real dataset read through a 'derivatives/x/' link. Its own rows keep
+  # derivatives NA, its real pipeline (brainvisa) keeps its name.
+  local base link
+  base=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  link="${base}/derivatives/x"
+  mkdir -p "${base}/derivatives"
+  ln -s "${bids_examples}/ieeg_epilepsy" "${link}"
+
+  local via_link direct counts
+  via_link=$(libBIDSsh_parse_bids_to_table "${link}" |
+    awk -F '\t' -v OFS='\t' -v root="${link}/" '{ sub(root, "", $NF); print }')
+  direct=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ieeg_epilepsy" |
+    awk -F '\t' -v OFS='\t' -v root="${bids_examples}/ieeg_epilepsy/" '{ sub(root, "", $NF); print }')
+  counts=$(awk -F '\t' 'NR > 1 { n[$1]++ } END { for (k in n) print k, n[k] }' \
+    <<<"${via_link}" | LC_ALL=C sort)
+  assert_equals "NA 30
+brainvisa 2" "${counts}" "ieeg_epilepsy below 'derivatives/x/': derivatives column"
+  assert_equals "${direct}" "${via_link}" \
+    "ieeg_epilepsy gives the same table through a 'derivatives/x/' link"
 }
 
 test_table_filter() {
@@ -1537,6 +1619,22 @@ test_bidsignore_parser_root_anchored_defaults() {
   return $rc
 }
 
+test_bidsignore_parser_root_spelling() {
+  # Equivalent spellings of bidspath keep the same rows. A failed strip of
+  # the root must not let the default '.*' ignore drop every row.
+  local root parent name
+  root=$(_make_bidsignore_fixture)
+  parent="${root%/*}"
+  name="${root##*/}"
+
+  local spelling count
+  for spelling in "${root}" "${root}/" "${root}//" "//${root}" "${root}/." \
+    "./${name}" "./${name}//" "${name}/"; do
+    count=$(_row_count "$(cd "${parent}" && libBIDSsh_parse_bids_to_table "${spelling}")")
+    assert_equals "3" "${count}" "rows for bidspath '${spelling}'" || return 1
+  done
+}
+
 test_apply_bidsignore() {
   local root
   root=$(_make_bidsignore_fixture)
@@ -1611,11 +1709,54 @@ test_main_entrypoint() {
   assert_contains "Usage: libBIDS.sh" "$out" "--no-bidsignore --help usage on stdout" || return 1
 }
 
+test_apply_bidsignore_root_spelling() {
+  # The table paths and the root can use different spellings of one
+  # directory (relative or absolute, './x' or 'x').
+  local root parent name
+  root=$(_make_bidsignore_fixture)
+  parent="${root%/*}"
+  name="${root##*/}"
+
+  local raw_rel raw_abs out
+  raw_rel=$(cd "${parent}" && libBIDSsh_parse_bids_to_table --no-bidsignore "./${name}")
+  raw_abs=$(libBIDSsh_parse_bids_to_table --no-bidsignore "${root}")
+
+  out=$(cd "${parent}" && libBIDSsh_apply_bidsignore "${raw_rel}" "${root}" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "relative table, absolute root" || return 1
+  out=$(cd "${parent}" && libBIDSsh_apply_bidsignore "${raw_rel}" "${name}/" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "'./x' table, 'x/' root" || return 1
+  out=$(cd "${parent}" && libBIDSsh_apply_bidsignore "${raw_abs}" "./${name}" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "absolute table, relative root" || return 1
+  mkdir -p "${parent}/work"
+  out=$(cd "${parent}/work" && libBIDSsh_apply_bidsignore "${raw_abs}" "../${name}" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "absolute table, '../x' root" || return 1
+  # A table path with a '..' component must not be tested as it is: the
+  # default '.*' ignore would match it and drop every row.
+  local raw_dotdot
+  raw_dotdot=$(cd "${parent}" && libBIDSsh_parse_bids_to_table --no-bidsignore "${name}/../${name}")
+  out=$(cd "${parent}" && libBIDSsh_apply_bidsignore "${raw_dotdot}" "${name}" 2>&1)
+  assert_equals "3" "$(_row_count "${out}")" "'x/../x' table, 'x' root" || return 1
+  local raw_up
+  raw_up=$(cd "${root}/sub-02" && libBIDSsh_parse_bids_to_table --no-bidsignore ..)
+  out=$(cd "${root}/sub-02" && libBIDSsh_apply_bidsignore "${raw_up}" . 2>"${root}.up.err")
+  assert_equals "7" "$(_row_count "${out}")" "'..' table, '.' root keeps rows" || return 1
+  assert_contains "Warning" "$(cat "${root}.up.err")" "'..' table, '.' root writes a warning" || return 1
+
+  # Rows that are not below the root are kept, with a warning on stderr.
+  local other err
+  other=$(mktemp -d "${test_tmpdir}/other.XXXXXX")
+  out=$(libBIDSsh_apply_bidsignore "${raw_abs}" "${other}" 2>"${other}.err")
+  err=$(cat "${other}.err")
+  assert_equals "7" "$(_row_count "${out}")" "rows not below the root are kept" || return 1
+  assert_contains "Warning" "${err}" "a warning is written for rows not below the root" || return 1
+}
+
 echo "Starting libBIDS.sh test suite..."
 echo "---"
 
 run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
+run_test "Internal: _libBIDSsh_parse_filename relative to root" test_parse_filename_relative_root
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
@@ -1625,6 +1766,8 @@ run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test
 run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_parse_bids_to_table_directory_recordings
 run_test "Public API: libBIDSsh_parse_bids_to_table core and table files" test_parse_bids_to_table_core_files
 run_test "Public API: libBIDSsh_parse_bids_to_table discovery on bids-examples" test_parse_bids_to_table_discovery_bids_examples
+run_test "Public API: libBIDSsh_parse_bids_to_table relative columns" test_parse_bids_to_table_relative_columns
+run_test "Public API: libBIDSsh_parse_bids_to_table relative columns on bids-examples" test_parse_bids_to_table_relative_columns_bids_examples
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
@@ -1659,8 +1802,10 @@ run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsi
 run_test "Internal: default ignores match bids-validator" test_bidsignore_defaults_match_validator
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
 run_test "Public API: libBIDSsh_parse_bids_to_table root-anchored defaults" test_bidsignore_parser_root_anchored_defaults
+run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore root spelling" test_bidsignore_parser_root_spelling
 run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore
 run_test "Public API: libBIDSsh_apply_bidsignore empty fields" test_apply_bidsignore_empty_fields
+run_test "Public API: libBIDSsh_apply_bidsignore root spelling" test_apply_bidsignore_root_spelling
 run_test "Main block: direct execution" test_main_entrypoint
 
 echo "---"

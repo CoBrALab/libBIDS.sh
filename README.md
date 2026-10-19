@@ -121,8 +121,11 @@ The TSV columns use the full BIDS entity **names** (e.g. `subject`), not the ent
 key is the entity's `.name` field (`sub`) and the column header is the entity object
 name (`subject`).
 
-- `derivatives`: Pipeline name if in derivatives folder
-- `datatype`: BIDS datatype (anat, func, dwi, etc.)
+- `derivatives`: Pipeline name if in derivatives folder, else `NA`. For nested
+  derivatives (`derivatives/a/derivatives/b/...`) the value is the innermost
+  pipeline (`b`).
+- `datatype`: BIDS datatype (anat, func, dwi, etc.). A file at the dataset root
+  has datatype `NA`.
 - BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
 - `suffix`: File suffix (bold, T1w, dwi, etc.). A core or table file has no
   entities, and its suffix is the whole stem: `dataset_description`,
@@ -131,6 +134,12 @@ name (`subject`).
   `-r "suffix:^description$"` finds atlas description files only.
 - `extension`: File extension
 - `path`: Full file path
+
+The `derivatives` and `datatype` values come from the path relative to the dataset
+root. The directories above the root have no effect: a dataset stored in
+`/data/derivatives/study/` does not get `derivatives` = `study`, and a dataset
+directory named `anat` does not give its root-level files datatype `anat`. The
+`path` column keeps the path as given to the parser.
 
 **Note:** When filtering or accessing columns, always use these entity names (e.g., `subject`, `session`, `acquisition`).
 
@@ -258,6 +267,10 @@ a table that was parsed with `--no-bidsignore`, or one obtained from another sou
 ```bash
 filtered=$(libBIDSsh_apply_bidsignore "$table_data" "path/to/dataset" [--no-default-ignores])
 ```
+
+The table paths and the dataset path can use different spellings of the same
+directory (relative or absolute, `./ds` or `ds/`). If a row path is not below the
+dataset path, the row is kept and a warning goes to stderr.
 
 **Example:**
 
@@ -408,6 +421,9 @@ Internal function that parses BIDS filenames into component entities.
 ```bash
 declare -A file_info
 _libBIDSsh_parse_filename "sub-01_task-rest_bold.nii.gz" file_info
+# Optional third argument: the dataset root. Then datatype and derivatives
+# come from the path relative to the root.
+_libBIDSsh_parse_filename "/data/ds/sub-01/anat/sub-01_T1w.nii.gz" file_info "/data/ds"
 ```
 
 **Populated fields:**
