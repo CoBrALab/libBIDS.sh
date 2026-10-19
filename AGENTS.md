@@ -246,15 +246,20 @@ it removes the rows that match all filters and keeps all other rows.
 ### Glob Pattern Usage
 
 ```bash
-# Enable extended globbing
-shopt -s extglob nullglob globstar
+# Enable extended globbing (save the caller's option first, restore after)
+saved_shopts=$(shopt -p extglob) || true
+shopt -s extglob
 
 # Match by schema suffix and extension only (both lists are generated from
 # schema.json by generate_entity_patterns.sh)
 local pattern="*${suffixes}${extensions}"
 
-# Find files
-local files=("${bidspath}"/**/${pattern})
+# Find files: 'find -L' follows symlinked directories (globstar does not) and
+# stops at link loops; dot names are pruned; 'sort -z' keeps the glob order.
+# Each basename is then tested against the extglob pattern.
+while IFS= read -r -d '' found; do
+  [[ ${found##*/} == ${pattern} ]] && files+=("${found}")
+done < <(find -L "${bidspath}" -mindepth 1 -name '.*' -prune -o -print0 | sort -z)
 ```
 
 ### AWK Integration
@@ -371,7 +376,8 @@ Validates BIDS compliance of example datasets. Features:
 
 - **Bash >= 4.3** (hard requirement: associative arrays, namerefs)
 - **AWK** (any POSIX awk: gawk, mawk, BSD awk)
-- **Core utils**: standard GNU tools (`grep`, `sed`, `tr`, `paste`, `sort`, ...)
+- **Core utils**: standard GNU tools (`grep`, `sed`, `tr`, `paste`, `sort`, ...);
+  the parser uses `find -L ... -print0 | sort -z` for file discovery
 
 ### Optional Dependencies
 

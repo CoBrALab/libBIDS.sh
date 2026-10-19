@@ -17,6 +17,7 @@ Pattern matching is permissive with respect to BIDS spec, it may match some file
 
 - **Bash version:** ≥ 4.3
   (Due to associative arrays, `readarray`, and `declare -n` usage)
+- **`find` and `sort`** with `-print0` and `-z` (GNU or BSD versions)
 
 macOS users: Apple's default Bash (3.2) is too old. You must upgrade to ≥ 4.3.
 
@@ -90,6 +91,16 @@ table_data=$(libBIDSsh_parse_bids_to_table "bids-examples/ds001")
 
 By default the parser honors a root-level `.bidsignore` and the built-in default
 ignores (see [`.bidsignore` support](#bidsignore-support) below).
+
+**Which files are in the table:**
+
+- A file or directory is a row when its name is `<anything>_<suffix><extension>`,
+  where `<suffix>` and `<extension>` are values from the BIDS schema. Entity
+  tokens in the name are not checked (permissive matching).
+- The parser follows symbolic links to directories (for example a `sub-02` link to
+  other storage). A link loop is reported by `find` on stderr and is not followed.
+- Files and directories whose name starts with `.` are skipped.
+- Rows are sorted by path, in the collation order of the current locale.
 
 **Output columns:**
 

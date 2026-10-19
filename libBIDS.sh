@@ -860,16 +860,33 @@ libBIDSsh_parse_bids_to_table() {
 
   local pattern="*${suffixes}${extensions}"
 
-  # Save the caller's shell options and restore them after the glob.
+  # Save the caller's extglob option and restore it after the match.
   # 'shopt -p' returns non-zero when an option is off, thus '|| true'.
   local saved_shopts
-  saved_shopts=$(shopt -p extglob nullglob globstar) || true
+  saved_shopts=$(shopt -p extglob) || true
   shopt -s extglob
-  shopt -s nullglob
-  shopt -s globstar
 
-  # shellcheck disable=SC2206
-  local files=("${bidspath}"/**/${pattern})
+  # List the files and directories with 'find -L', which follows symbolic
+  # links to directories (bash globstar does not) and stops at a link loop.
+  # Names that start with '.' are pruned, as globstar without dotglob does.
+  # 'sort -z' uses the collation of the locale, as the glob sort did, so the
+  # row order is the same as with "${bidspath}"/**/${pattern}.
+  # find has no '--', thus a path that starts with '-' gets a './' prefix.
+  local find_root="${bidspath}"
+  if [[ ${find_root} == -* ]]; then
+    find_root="./${find_root}"
+  fi
+  local -a files=()
+  local found rel
+  while IFS= read -r -d '' found; do
+    # shellcheck disable=SC2053
+    if [[ ${found##*/} == ${pattern} ]]; then
+      # Make the path as the glob did: "${bidspath}/<relative path>"
+      rel="${found#"${find_root}"}"
+      rel="${rel#/}"
+      files+=("${bidspath}/${rel}")
+    fi
+  done < <(find -L "${find_root}" -mindepth 1 -name '.*' -prune -o -print0 | sort -z)
 
   eval "${saved_shopts}"
 

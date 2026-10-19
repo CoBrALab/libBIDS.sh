@@ -386,6 +386,30 @@ shopt -u nullglob
 shopt -s globstar" "$out" "caller variables and shell options must not change"
 }
 
+test_parse_bids_to_table_symlinked_dirs() {
+  # Files below a symbolic link to a directory must be in the table. A link
+  # loop must not make the parser loop forever.
+  local base root
+  base=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  root="${base}/ds"
+  mkdir -p "${base}/store/sub-02/anat" "${base}/store/fmriprep/sub-01/anat" \
+    "${root}/sub-01/anat" "${root}/derivatives"
+  : >"${base}/store/sub-02/anat/sub-02_T1w.nii.gz"
+  : >"${base}/store/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz"
+  : >"${root}/sub-01/anat/sub-01_T1w.nii.gz"
+  ln -s "${base}/store/sub-02" "${root}/sub-02"
+  ln -s "${base}/store/fmriprep" "${root}/derivatives/fmriprep"
+  ln -s .. "${root}/sub-01/anat/loop"
+
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "$root" 2>/dev/null |
+    awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/derivatives/fmriprep/sub-01/anat/sub-01_desc-preproc_T1w.nii.gz
+${root}/sub-01/anat/sub-01_T1w.nii.gz
+${root}/sub-02/anat/sub-02_T1w.nii.gz" "$paths" \
+    "rows below symlinked directories, once each, in path order"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1492,6 +1516,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
 run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_to_table_func_gii
 run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_parse_bids_to_table_no_leaks
+run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test_parse_bids_to_table_symlinked_dirs
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
