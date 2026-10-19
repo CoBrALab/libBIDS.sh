@@ -214,6 +214,140 @@ A	B	C
   return 0
 }
 
+test_table_filter_patterns() {
+  # Row filter patterns: split at the first ':' only, no backslash escape
+  # processing, POSIX bracket classes, exact complement for --invert.
+  local out
+
+  local table="a	path
+1	x:y
+2	xnz
+3	x.z"
+  out=$(libBIDSsh_table_filter "$table" -r "path:x:z")
+  assert_equals "a	path" "$out" "pattern with ':' must not be cut at the second ':'" || return 1
+
+  out=$(libBIDSsh_table_filter "$table" -r 'path:^x\.z$' 2>&1)
+  assert_equals "a	path
+3	x.z" "$out" "'\\.' must match a literal dot, with no warning" || return 1
+
+  out=$(libBIDSsh_table_filter "$table" -c a -r 'a:^[[:digit:]]+$')
+  assert_equals "a
+1
+2
+3" "$out" "POSIX bracket class in pattern" || return 1
+
+  table="subject	suffix
+sub-01	T1w
+sub-01	bold
+sub-02	bold"
+  out=$(libBIDSsh_table_filter "$table" -r "suffix:bold" -r "subject:^sub-01$" -v)
+  assert_equals "subject	suffix
+sub-01	T1w
+sub-02	bold" "$out" "--invert removes only rows that match all -r filters" || return 1
+
+  return 0
+}
+
+test_table_filter_invert_complement() {
+  # Rows kept by the -r filters plus rows kept with --invert = all rows.
+  local full total matched inverted
+  full=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+  total=$(($(wc -l <<<"$full") - 1))
+  matched=$(($(libBIDSsh_table_filter "$full" -r "task:balloon" -r "subject:^sub-01$" | wc -l) - 1))
+  inverted=$(($(libBIDSsh_table_filter "$full" -r "task:balloon" -r "subject:^sub-01$" -v | wc -l) - 1))
+  assert_equals "$total" "$((matched + inverted))" "normal + inverted rows = all rows (ds001)" || return 1
+
+  return 0
+}
+
+test_table_filter_ds001() {
+  # Column order, row filter and a backslash pattern on real data (ds001).
+  local full out err
+  full=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+
+  out=$(libBIDSsh_table_filter "$full" -c "path,subject,run" -r "suffix:^bold$")
+  assert_equals "path	subject	run" "$(head -n 1 <<<"$out")" "-c keeps the requested order (ds001)" || return 1
+  assert_equals "49" "$(($(wc -l <<<"$out") - 1))" "-r 'suffix:^bold$' row count (ds001)" || return 1
+
+  out=$(libBIDSsh_table_filter "$full" -r 'extension:^nii\.gz$' 2>"${test_tmpdir}/err")
+  err=$(<"${test_tmpdir}/err")
+  assert_equals "80" "$(($(wc -l <<<"$out") - 1))" "-r 'extension:^nii\\.gz$' row count (ds001)" || return 1
+  assert_equals "" "$err" "'\\.' in a pattern must not give a warning (ds001)" || return 1
+
+  return 0
+}
+
+test_table_filter_columns() {
+  # Column selection: requested order, first of duplicate names, errors for
+  # unknown names, index 0, index > NF and a missing option argument.
+  local out err rc
+
+  local table="c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12
+1	2	3	4	5	6	7	8	9	10	11	12"
+  out=$(libBIDSsh_table_filter "$table" -c "c12,c3,c10,c1")
+  assert_equals "c12	c3	c10	c1
+12	3	10	1" "$out" "-c keeps the requested order" || return 1
+
+  out=$(libBIDSsh_table_filter "subject	json_path	json_path
+sub-01	/a.json	NA" -c json_path)
+  assert_equals "json_path
+/a.json" "$out" "duplicate header name selects the first column" || return 1
+
+  table="subject	task
+sub-01	task-rest"
+  local spec
+  for spec in "-c sub" "-c 0" "-c 3" "-c subject,,task" "-r sub:x" "-d sub"; do
+    rc=0
+    # shellcheck disable=SC2086
+    out=$(libBIDSsh_table_filter "$table" $spec 2>"${test_tmpdir}/err") || rc=$?
+    err=$(<"${test_tmpdir}/err")
+    assert_equals "1" "$rc" "'${spec}' must return 1" || return 1
+    assert_equals "" "$out" "'${spec}' must print nothing to stdout" || return 1
+    assert_contains "not found in header" "$err" "'${spec}' error message" || return 1
+  done
+
+  rc=0
+  out=$(libBIDSsh_table_filter "subject	task" -r "sub:x" 2>/dev/null) || rc=$?
+  assert_equals "1" "$rc" "unknown -r column on a header-only table must return 1" || return 1
+
+  local opt
+  for opt in -c -r -d; do
+    rc=0
+    err=$( (libBIDSsh_table_filter "$table" "$opt") 2>&1) || rc=$?
+    assert_equals "1" "$rc" "'${opt}' without an argument must return 1" || return 1
+    assert_contains "requires an argument" "$err" "'${opt}' without an argument" || return 1
+  done
+
+  rc=0
+  err=$(libBIDSsh_table_filter "$table" -r "subject" 2>&1) || rc=$?
+  assert_equals "1" "$rc" "-r without ':' must return 1" || return 1
+
+  return 0
+}
+
+test_table_filter_posix_awk() {
+  # The awk program must use POSIX awk only (mawk, BSD awk, gawk --posix).
+  if ! command -v gawk >/dev/null 2>&1; then
+    skip_test "gawk not found"
+  fi
+  local awkdir="${test_tmpdir}/posix_awk"
+  mkdir -p "${awkdir}"
+  printf '#!/bin/sh\nexec gawk --posix "$@"\n' >"${awkdir}/awk"
+  chmod +x "${awkdir}/awk"
+
+  local table="subject	task	run
+sub-01	task-rest	run-1
+sub-02	task-rest	NA"
+  local out rc=0
+  out=$(PATH="${awkdir}:${PATH}" libBIDSsh_table_filter "$table" \
+    -c "run,subject" -r "task:rest" -r "subject:^sub-0[12]$" -d run 2>&1) || rc=$?
+  assert_equals "0" "$rc" "table_filter must run on gawk --posix" || return 1
+  assert_equals "run	subject
+run-1	sub-01" "$out" "table_filter output on gawk --posix" || return 1
+
+  return 0
+}
+
 test_empty_arrays_nounset() {
   # Bash < 4.4 treats "${arr[@]}" on an empty array as unbound under set -u.
   # Run the common calls with empty internal arrays (no -r filters, no custom
@@ -452,6 +586,11 @@ run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
+run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
+run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
+run_test "Public API: libBIDSsh_table_filter on ds001 data" test_table_filter_ds001
+run_test "Public API: libBIDSsh_table_filter column errors" test_table_filter_columns
+run_test "Public API: libBIDSsh_table_filter on POSIX awk" test_table_filter_posix_awk
 run_test "Bash 4.3: empty arrays under set -u" test_empty_arrays_nounset
 run_test "Public API: libBIDSsh_drop_na_columns" test_drop_na_columns
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path

@@ -114,10 +114,18 @@ libBIDSsh_table_filter "${table_data}" [OPTIONS]
 
 **Options:**
 
-- `-c, --columns <col1,col2,...>`: Select columns by name or index
-- `-r, --row-filter <col:pattern>`: Keep rows where column matches value/regex (AND logic for multiple filters)
-- `-v, --invert`: Invert row filter - remove matching rows instead of keeping them
+- `-c, --columns <col1,col2,...>`: Select columns by name or 1-based index, in the given order
+- `-r, --row-filter <col:pattern>`: Keep rows where column matches pattern (AND logic for multiple filters).
+  The pattern is an unanchored AWK extended regex (substring match). Only the first `:` separates the
+  column from the pattern. Values carry the entity key prefix (`sub-01`, `run-01`), so use
+  `^...$` anchors for an exact match: `subject:sub-01` also matches `sub-010`.
+- `-v, --invert`: Invert row filter - remove the rows that match all `-r` filters, keep all other rows
 - `-d, --drop-na <col1,col2,...>`: Drop rows where listed columns are "NA"
+
+A column name must be an exact header name (no spaces, no empty entries); with duplicate header
+names the first column is used. An unknown name, index 0, an index larger than the column count,
+or an option without its argument prints an error to stderr and returns 1 with no output.
+The filter uses POSIX awk only, so it runs on gawk, mawk and BSD awk.
 
 **Examples:**
 
@@ -128,11 +136,14 @@ libBIDSsh_table_filter "$table_data" -c "subject,task"
 # Filter for balloon analog risk task (ds001)
 libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask"
 
-# Multiple filters: task AND subject 01
-libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask" -r "subject:sub-01"
+# Multiple filters: task AND exactly subject 01
+libBIDSsh_table_filter "$table_data" -r "task:balloonanalogrisktask" -r "subject:^sub-01$"
 
-# Complex filtering with regex
-libBIDSsh_table_filter "$table_data" -r "task:(rest|motor)" -r "run:[1-3]"
+# Complex filtering with regex (runs 1 to 3 only)
+libBIDSsh_table_filter "$table_data" -r "task:(rest|motor)" -r "run:^run-0?[1-3]$"
+
+# A literal dot needs a backslash
+libBIDSsh_table_filter "$table_data" -r 'extension:^nii\.gz$'
 
 # Remove all bold files (invert filter)
 libBIDSsh_table_filter "$table_data" -r "suffix:bold" --invert
