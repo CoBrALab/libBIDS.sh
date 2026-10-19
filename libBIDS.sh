@@ -1213,8 +1213,10 @@ libBIDSsh_json_to_associative_array() {
   # Usage: libBIDSsh_json_to_associative_array "file.json" array_ref
   # Arguments:
   #   file.json: Path to JSON file. The top-level value must be an object.
-  #   array_ref: Name of associative array to populate (declare -A)
-  # The function clears array_ref first. Each value has a type prefix:
+  #   array_ref: Name of associative array to populate (declare -A). The
+  #     function returns 1 if it is not an associative array.
+  # The function clears array_ref first. NUL characters ("\u0000") in keys,
+  # strings and array items are removed. Each value has a type prefix:
   #   string:..., number:..., boolean:..., null:null, object:{...} (JSON text),
   #   array:a,b,c (items joined with ","; null items are empty, and items
   #   that are arrays or objects are JSON text).
@@ -1237,6 +1239,12 @@ libBIDSsh_json_to_associative_array() {
   fi
   declare -n arr_ref="$array_name" # nameref to the associative array
   arr_ref=()
+  # A plain or undeclared name would make the subscripts below arithmetic.
+  # Check after "arr_ref=()": bash 4.3 "declare -p" fails on an unset array.
+  if [[ "$(declare -p "$array_name" 2>/dev/null)" != "declare -A"* ]]; then
+    echo "Error: '$array_name' is not an associative array (declare -A)" >&2
+    return 1
+  fi
 
   if ! command -v jq >/dev/null 2>&1; then
     echo "Error: jq is required to parse '$json_file'" >&2
@@ -1246,7 +1254,9 @@ libBIDSsh_json_to_associative_array() {
   # jq writes each key and each typed value followed by a NUL byte, so keys
   # and values can contain "=" and newlines. A shell variable cannot hold a
   # NUL byte, so the output goes to a temporary file. This also lets us check
-  # the jq exit status before we change array_ref.
+  # the jq exit status before we change array_ref. A JSON string can hold
+  # "\u0000", so jq removes NUL bytes from each key and value first; else a
+  # NUL in a value would move every key and value that comes after it.
   local tmp_file
   tmp_file=$(mktemp "${TMPDIR:-/tmp}/libBIDSsh_json.XXXXXX") || {
     echo "Error: Cannot create a temporary file" >&2
@@ -1261,23 +1271,28 @@ libBIDSsh_json_to_associative_array() {
           elif .value|type == "object" then "object:" + (.value|tostring)
           else (.value|type) + ":" + (.value|tostring)
           end
-        )) + "\u0000"' "$json_file" >"$tmp_file"; then
+        )) | gsub("\u0000"; "") + "\u0000"' "$json_file" >"$tmp_file"; then
     rm -f "$tmp_file"
     echo "Error: Cannot parse '$json_file' as a JSON object" >&2
     return 1
   fi
 
+  # Read into a local array first, so that the temporary file is removed
+  # before any write to the caller's array.
   local key value
+  local -A __libBIDSsh_json_kv=()
   while IFS= read -r -d '' key && IFS= read -r -d '' value; do
     if [[ -z "$key" ]]; then
       # bash does not accept an empty associative array subscript
       echo "Warning: Skipping empty key in '$json_file'" >&2
       continue
     fi
-    # shellcheck disable=SC2034 # arr_ref is a nameref to the caller's array
-    arr_ref["$key"]="$value"
+    __libBIDSsh_json_kv["$key"]="$value"
   done <"$tmp_file"
   rm -f "$tmp_file"
+  for key in "${!__libBIDSsh_json_kv[@]}"; do
+    arr_ref["$key"]="${__libBIDSsh_json_kv[$key]}"
+  done
   return 0
 }
 

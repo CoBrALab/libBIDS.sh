@@ -260,8 +260,10 @@ libBIDSsh_json_to_associative_array "file.json" json_data
 The function clears the target array before it adds the keys of the file.
 It returns 1 and writes a message to stderr if `jq` is missing, if the file
 is not valid JSON, if the top-level value is not an object, or if `jq` fails.
-On error, the target array is empty. Keys and values can contain `=`, quotes
-and newlines. A key that is an empty string is skipped with a warning.
+On error, the target array is empty. It also returns 1 if the target is not
+an associative array (`declare -A`). Keys and values can contain `=`, quotes
+and newlines. A NUL character (`\u0000`) in a key, a string or an array item
+is removed. A key that is an empty string is skipped with a warning.
 
 **Value format:**
 - `type:value` for primitives (e.g., `string:hello`, `number:42`,

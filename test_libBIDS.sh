@@ -974,6 +974,14 @@ test_json_to_associative_array_roundtrip() {
   libBIDSsh_json_to_associative_array "${dir}/empty_key.json" json_data 2>/dev/null
   assert_equals "1" "${#json_data[@]}" "empty key should be skipped" || return 1
   assert_equals "number:2" "${json_data[a]:-}" "key after empty key" || return 1
+
+  # A "\u0000" in a string must not move the keys that come after it.
+  printf '%s\n' '{"a": "x\u0000y", "b": 1, "c": 2}' >"${dir}/nul.json"
+  libBIDSsh_json_to_associative_array "${dir}/nul.json" json_data
+  assert_equals "3" "${#json_data[@]}" "NUL: should have 3 keys" || return 1
+  assert_equals "string:xy" "${json_data[a]:-}" "NUL is removed from value" || return 1
+  assert_equals "number:1" "${json_data[b]:-}" "key b after a NUL value" || return 1
+  assert_equals "number:2" "${json_data[c]:-}" "key c after a NUL value" || return 1
   return 0
 }
 
@@ -1002,6 +1010,13 @@ test_json_to_associative_array_errors() {
   libBIDSsh_json_to_associative_array "${dir}/top_array.json" json_data 2>/dev/null || rc=$?
   assert_equals "1" "$rc" "top-level array should return 1" || return 1
   assert_equals "0" "${#json_data[@]}" "no keys from a top-level array" || return 1
+
+  # The target must be an associative array; JSON keys are not arithmetic.
+  # shellcheck disable=SC2034 # read by name in the function
+  local -a indexed_data=()
+  rc=0
+  libBIDSsh_json_to_associative_array "${dir}/first.json" indexed_data 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "indexed array target should return 1" || return 1
 
   rc=0
   (
