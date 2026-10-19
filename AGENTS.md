@@ -78,8 +78,9 @@ short token used in filenames):
 
 When passing column names to `--columns`, `--row-filter`, `--drop-na`, sort keys,
 or `libBIDSsh_table_column_to_array`, use the entity **name** (e.g. `subject`).
-Passing an entity key like `sub` will silently fail to match (it is neither a known
-column name nor a numeric index). Numeric column indices are also accepted.
+Passing an entity key like `sub` does not match (it is neither a known column name
+nor a numeric index). `libBIDSsh_table_filter` then prints an error to stderr and
+returns 1. Numeric (1-based) column indices are also accepted.
 
 ### Core table structure
 
@@ -228,14 +229,16 @@ done
 
 ### Row-Filter Syntax (important)
 
-`--row-filter` takes `column:pattern`. Internally the `:` is split to a tab and
-the pattern is matched against the column as an **AWK regex** (`~`). It is NOT an
-AWK expression. Multiple `-r` filters combine with AND. `--invert` removes
-matching rows instead of keeping them.
+`--row-filter` takes `column:pattern`. The value is split at the **first** `:` only
+(the pattern can contain `:`), and the pattern is matched against the column as an
+unanchored **AWK extended regex** (`~`, substring match). It is NOT an AWK
+expression. Use `^...$` for an exact match (`sub-01` also matches `sub-010`).
+Multiple `-r` filters combine with AND. `--invert` keeps the exact complement:
+it removes the rows that match all filters and keeps all other rows.
 
 ```bash
-# keep rows where task column matches "rest" AND subject matches "sub-01"
--r "task:rest" -r "subject:sub-01"
+# keep rows where task column matches "rest" AND subject is exactly "sub-01"
+-r "task:rest" -r "subject:^sub-01$"
 ```
 
 ### Glob Pattern Usage
@@ -257,10 +260,14 @@ local files=("${bidspath}"/**/${pattern})
 
 ### AWK Integration
 
+Write POSIX awk only (no arrays of arrays, no `length(array)`, no reliance on
+`for (k in arr)` order), so that the code runs on gawk, mawk and BSD awk. Pass
+regex patterns through the environment and read them with `ENVIRON`, because
+`awk -v` processes backslash escapes (`\.` becomes `.`):
+
 ```bash
-awk -v columns="${columns}" \
-    -v row_filters_str="${row_filters_str}" \
-    'BEGIN { FS="\t"; OFS="\t" } ...'
+LIBBIDSSH_ROW_FILTERS="${row_filters_str}" \
+  awk 'BEGIN { FS="\t"; OFS="\t"; filters = ENVIRON["LIBBIDSSH_ROW_FILTERS"] } ...'
 ```
 
 ### JSON Processing
@@ -348,7 +355,7 @@ Validates BIDS compliance of example datasets. Features:
 ### Required Runtime
 
 - **Bash >= 4.3** (hard requirement: associative arrays, namerefs)
-- **AWK** (`awk` / `gawk`)
+- **AWK** (any POSIX awk: gawk, mawk, BSD awk)
 - **Core utils**: standard GNU tools (`grep`, `sed`, `tr`, `paste`, `sort`, ...)
 
 ### Optional Dependencies

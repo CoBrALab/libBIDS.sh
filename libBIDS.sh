@@ -11,18 +11,25 @@ libBIDSsh_table_filter() {
   # Filter TSV-structured BIDS data, returning specified columns and optionally filtering rows
   # Usage: libBIDSsh_table_filter "${table_data}" [OPTIONS]
   # Options:
-  #   -c, --columns <list>      Comma-separated list of column indices or names to keep
-  #   -r, --row-filter <col:pattern> Filter rows where column matches exact string or regex
-  #   -v, --invert              Invert row filter logic (remove matching rows instead of keeping)
+  #   -c, --columns <list>      Comma-separated list of column indices or names to keep,
+  #                             printed in the given order
+  #   -r, --row-filter <col:pattern> Keep rows where column matches pattern. The pattern is
+  #                             an unanchored AWK extended regex (substring match); use
+  #                             ^...$ for an exact match. Only the first ':' separates the
+  #                             column from the pattern. Multiple -r filters combine with AND.
+  #   -v, --invert              Invert row filter logic (remove the rows that match all
+  #                             -r filters, keep all other rows)
   #   -d, --drop-na <list>      Comma-separated list of columns to check for NA values
+  # Columns are given by name (the first header field with that name) or by 1-based index.
+  # An unknown column name or an index out of range is an error (return 1, nothing printed).
   # Returns: Filtered TSV data through stdout
   # Example:
-  #   filtered=$(libBIDSsh_table_filter "$data" -c "subject,session" -r "task:rest" -d "run")
+  #   filtered=$(libBIDSsh_table_filter "$data" -c "subject,session" -r "task:^task-rest$" -d "run")
   local table_data="$1"
   shift
 
   local columns=""
-  local row_filters=()
+  local row_filters_str=""
   local drop_na_cols=""
   local invert_filter=""
 
@@ -30,14 +37,31 @@ libBIDSsh_table_filter() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -c | --columns)
+        if [[ $# -lt 2 ]]; then
+          echo "Error: $1 requires an argument" >&2
+          return 1
+        fi
         columns="$2"
         shift 2
         ;;
       -r | --row-filter)
-        row_filters+=("$2")
+        if [[ $# -lt 2 ]]; then
+          echo "Error: $1 requires an argument" >&2
+          return 1
+        fi
+        if [[ "$2" != *:* || "$2" == *$'\n'* ]]; then
+          echo "Error: $1 requires a single-line col:pattern argument, got '$2'" >&2
+          return 1
+        fi
+        # Split at the first ':' only, so that the pattern can contain ':'
+        row_filters_str+="${2%%:*}"$'\t'"${2#*:}"$'\n'
         shift 2
         ;;
       -d | --drop-na)
+        if [[ $# -lt 2 ]]; then
+          echo "Error: $1 requires an argument" >&2
+          return 1
+        fi
         drop_na_cols="$2"
         shift 2
         ;;
@@ -52,104 +76,77 @@ libBIDSsh_table_filter() {
     esac
   done
 
-  # Convert row filters array to a delimiter-separated string that awk can parse
-  local row_filters_str
-  row_filters_str=$(printf "%s\n" ${row_filters[@]+"${row_filters[@]}"} | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
-
-  awk -v columns="${columns}" \
-    -v row_filters_str="${row_filters_str}" \
-    -v drop_na_cols="${drop_na_cols}" \
-    -v invert_filter="${invert_filter}" \
-    'BEGIN {
+  # Values go through the environment and not through 'awk -v', because awk
+  # processes backslash escapes in -v values (a pattern '\.' would become '.').
+  # The program uses POSIX awk only, so that it runs on gawk, mawk and BSD awk.
+  LIBBIDSSH_COLUMNS="${columns}" \
+    LIBBIDSSH_ROW_FILTERS="${row_filters_str}" \
+    LIBBIDSSH_DROP_NA_COLS="${drop_na_cols}" \
+    LIBBIDSSH_INVERT="${invert_filter}" \
+    awk '
+        function resolve_column(name, kind) {
+            # Return the field index of a column name or index, or exit 1
+            if (name in colnames) return colnames[name];
+            if (name ~ /^[0-9]+$/ && name + 0 >= 1 && name + 0 <= NF) return name + 0;
+            # Write to stderr through a pipe: "gawk --posix" opens "/dev/stderr"
+            # as a file, which truncates a log file that stderr is redirected to.
+            print "Error: " kind " \"" name "\" not found in header (use a header name or an index from 1 to " NF ")" | "cat 1>&2";
+            close("cat 1>&2");
+            exit 1;
+        }
+        BEGIN {
             FS="\t"; OFS="\t";
-            split(columns, cols, ",");
-            split(drop_na_cols, na_cols, ",");
+            columns = ENVIRON["LIBBIDSSH_COLUMNS"];
+            drop_na_cols = ENVIRON["LIBBIDSSH_DROP_NA_COLS"];
+            invert_filter = ENVIRON["LIBBIDSSH_INVERT"];
+            col_count = (columns != "") ? split(columns, cols, ",") : 0;
+            na_count = (drop_na_cols != "") ? split(drop_na_cols, na_cols, ",") : 0;
 
-            # Parse row filters
-            filter_count = split(row_filters_str, filter_lines, "\n");
-            for (i = 1; i <= filter_count; i++) {
-                split(filter_lines[i], filter_parts, "\t");
-                if (length(filter_parts) >= 2) {
-                    filters[i]["col"] = filter_parts[1];
-                    filters[i]["pattern"] = filter_parts[2];
-                }
+            # Parse row filters: one "col<TAB>pattern" per line
+            filter_count = 0;
+            line_count = split(ENVIRON["LIBBIDSSH_ROW_FILTERS"], filter_lines, "\n");
+            for (i = 1; i <= line_count; i++) {
+                if (filter_lines[i] == "") continue;
+                tab = index(filter_lines[i], "\t");
+                filter_count++;
+                filter_name[filter_count] = substr(filter_lines[i], 1, tab - 1);
+                filter_pat[filter_count] = substr(filter_lines[i], tab + 1);
             }
         }
         NR == 1 {
-            # Process header
+            # Process header; with duplicate names the first one wins
             for (i = 1; i <= NF; i++) {
-                colnames[$i] = i;
+                if (!($i in colnames)) colnames[$i] = i;
             }
 
-            # Determine columns to keep
-            if (columns != "") {
-                delete outcols;
-                outcount = 0;
-                for (i in cols) {
-                    if (cols[i] in colnames) {
-                        # Column name provided
-                        outcols[++outcount] = colnames[cols[i]];
-                    } else if (cols[i] ~ /^[0-9]+$/) {
-                        # Column index provided
-                        outcols[++outcount] = cols[i];
-                    }
-                }
-
-                # Print selected columns from header
-                for (i = 1; i <= outcount; i++) {
-                    printf "%s%s", $outcols[i], (i < outcount ? OFS : ORS);
-                }
-            } else {
-                # Print all columns if none specified
-                print;
-            }
-            next;
+            # Resolve all columns before anything is printed
+            for (i = 1; i <= col_count; i++) outcols[i] = resolve_column(cols[i], "Column");
+            for (i = 1; i <= filter_count; i++) filter_col[i] = resolve_column(filter_name[i], "Row filter column");
+            for (i = 1; i <= na_count; i++) na_col[i] = resolve_column(na_cols[i], "Drop NA column");
         }
-        {
-            # Check all row filters if specified (combined with AND)
+        NR > 1 {
+            # Row filters combine with AND; invert keeps the exact complement
             if (filter_count > 0) {
+                matched = 1;
                 for (i = 1; i <= filter_count; i++) {
-                    # Determine column for filtering
-                    if (filters[i]["col"] in colnames) {
-                        col = colnames[filters[i]["col"]];
-                    } else if (filters[i]["col"] ~ /^[0-9]+$/) {
-                        col = filters[i]["col"];
-                    } else {
-                        print "Error: Row filter column \"" filters[i]["col"] "\" not found in header" > "/dev/stderr";
-                        exit 1;
-                    }
-
-                    if (invert_filter == "1") {
-                        # Invert mode: skip row if pattern MATCHES
-                        if ($col ~ filters[i]["pattern"]) next;
-                    } else {
-                        # Normal mode: skip row if pattern does NOT match
-                        if ($col !~ filters[i]["pattern"]) next;
+                    if ($filter_col[i] !~ filter_pat[i]) {
+                        matched = 0;
+                        break;
                     }
                 }
+                if (invert_filter == "1" ? matched : !matched) next;
             }
 
             # Check for NA values in specified columns
-            if (drop_na_cols != "") {
-                for (i in na_cols) {
-                    # Determine column to check
-                    if (na_cols[i] in colnames) {
-                        col = colnames[na_cols[i]];
-                    } else if (na_cols[i] ~ /^[0-9]+$/) {
-                        col = na_cols[i];
-                    } else {
-                        print "Error: Drop NA column \"" na_cols[i] "\" not found in header" > "/dev/stderr";
-                        exit 1;
-                    }
-
-                    if ($col == "NA") next;
-                }
+            for (i = 1; i <= na_count; i++) {
+                if ($na_col[i] == "NA") next;
             }
-
+        }
+        {
             # Print row (selected columns or all)
-            if (columns != "") {
-                for (i = 1; i <= outcount; i++) {
-                    printf "%s%s", $outcols[i], (i < outcount ? OFS : ORS);
+            if (col_count > 0) {
+                for (i = 1; i <= col_count; i++) {
+                    printf "%s%s", $outcols[i], (i < col_count ? OFS : ORS);
                 }
             } else {
                 print;
