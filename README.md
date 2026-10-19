@@ -99,6 +99,8 @@ ignores (see [`.bidsignore` support](#bidsignore-support) below).
   tokens in the name are not checked (permissive matching).
 - The parser follows symbolic links to directories (for example a `sub-02` link to
   other storage). A link loop is reported by `find` on stderr and is not followed.
+- A directory-type recording (extension `.ds`, `.mefd` or `.ome.zarr`) is one row
+  for the directory. The files inside it are not rows.
 - Files and directories whose name starts with `.` are skipped.
 - Rows are sorted by path, in the collation order of the current locale.
 
@@ -211,8 +213,9 @@ Differences from `bids-validator`:
 **Supported gitignore syntax:** blank lines and `#` comments; `*` and `?` (which do
 not cross `/`); `**` whole-segment globstar (crosses directories); `[...]` bracket
 expressions; `\`-escapes; leading/embedded `/` to anchor a pattern to the dataset
-root; trailing `/` for directory-only matches; and `!` negation (re-include) with
-last-match-wins ordering.
+root; trailing `/` for directory-only matches (these also match a directory row,
+such as a `.ds` recording); and `!` negation (re-include) with last-match-wins
+ordering.
 
 **Limitations:** only the root-level `.bidsignore` is read (no inheritance / nested
 files, matching `bids-validator`). Because the parser only ever globs files whose

@@ -519,7 +519,8 @@ libBIDSsh_json_to_associative_array "file.json" metadata
    nested files, matching `bids-validator`). Negation (`!`) does not specially block
    re-including a file under an already-excluded parent directory — each file's full
    relative path is tested independently. Escaped trailing whitespace (`\ `) is the
-   one gitignore corner not fully honored. Because the parser only globs valid-BIDS
+   one gitignore corner not fully honored. A directory-only pattern (trailing `/`)
+   also matches a directory-valued row (`.ds`, `.mefd`, `.ome.zarr`). Because the parser only globs valid-BIDS
    suffix+extension files, `.bidsignore` patterns targeting non-BIDS files are no-ops.
    Built-in default ignores follow `bids-validator` (`/sourcedata/`, `/code/`,
    `/stimuli/`, `/log/`, `/doc/`, `.**`, `!/.bidsignore`), root-anchored, except

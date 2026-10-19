@@ -410,6 +410,40 @@ ${root}/sub-02/anat/sub-02_T1w.nii.gz" "$paths" \
     "rows below symlinked directories, once each, in path order"
 }
 
+test_parse_bids_to_table_directory_recordings() {
+  # A directory-type recording (.ds, .mefd, .ome.zarr) is one row. The files
+  # inside it are not rows. A directory-only .bidsignore pattern ('*.ds/')
+  # drops the directory row, in the parser and in libBIDSsh_apply_bidsignore.
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  mkdir -p "${root}/sub-01/meg/sub-01_task-a_meg.ds/sub" \
+    "${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr/0"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.ds/sub-01_task-a_meg.eeg"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.ds/sub/sub-01_task-a_meg.json"
+  : >"${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr/0/sub-01_SPIM.json"
+  : >"${root}/sub-01/meg/sub-01_task-a_meg.json"
+
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.ds
+${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "directory recordings are rows, their contents are not"
+
+  printf '%s\n' '*.ds/' >"${root}/.bidsignore"
+  paths=$(libBIDSsh_parse_bids_to_table "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "'*.ds/' in .bidsignore drops the .ds directory row"
+
+  local raw
+  raw=$(libBIDSsh_parse_bids_to_table --no-bidsignore "$root")
+  paths=$(libBIDSsh_apply_bidsignore "$raw" "$root" | awk -F '\t' 'NR > 1 { print $NF }')
+  assert_equals "${root}/sub-01/meg/sub-01_task-a_meg.json
+${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
+    "libBIDSsh_apply_bidsignore drops the .ds directory row for '*.ds/'"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1517,6 +1551,7 @@ run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
 run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_to_table_func_gii
 run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_parse_bids_to_table_no_leaks
 run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test_parse_bids_to_table_symlinked_dirs
+run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_parse_bids_to_table_directory_recordings
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement

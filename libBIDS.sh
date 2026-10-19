@@ -786,6 +786,10 @@ libBIDSsh_apply_bidsignore() {
     local norm_p relpath
     norm_p=$(tr -s / <<<"${cols[path_idx]-}")
     relpath="${norm_p#"${norm_bidspath}"/}"
+    # A directory row gets a trailing '/' for directory-only patterns.
+    if [[ -d $norm_p ]]; then
+      relpath+=/
+    fi
     if ! _libBIDSsh_path_is_ignored "$relpath"; then
       printf '%s\n' "$line"
     fi
@@ -871,6 +875,9 @@ libBIDSsh_parse_bids_to_table() {
   # Names that start with '.' are pruned, as globstar without dotglob does.
   # 'sort -z' uses the collation of the locale, as the glob sort did, so the
   # row order is the same as with "${bidspath}"/**/${pattern}.
+  # A directory-type recording (schema extensions that end in '/': .ds,
+  # .mefd, .ome.zarr) is one BIDS file: it is listed, but find does not go
+  # into it, so the files inside it are not rows.
   # find has no '--', thus a path that starts with '-' gets a './' prefix.
   local find_root="${bidspath}"
   if [[ ${find_root} == -* ]]; then
@@ -886,7 +893,9 @@ libBIDSsh_parse_bids_to_table() {
       rel="${rel#/}"
       files+=("${bidspath}/${rel}")
     fi
-  done < <(find -L "${find_root}" -mindepth 1 -name '.*' -prune -o -print0 | sort -z)
+  done < <(find -L "${find_root}" -mindepth 1 \( -name '.*' -prune \) -o \
+    \( -type d \( -name '*.ds' -o -name '*.mefd' -o -name '*.ome.zarr' \) \
+    -print0 -prune \) -o -print0 | sort -z)
 
   eval "${saved_shopts}"
 
@@ -908,6 +917,11 @@ libBIDSsh_parse_bids_to_table() {
           relpath="${relpath//\/\//\/}"
         done
         relpath="${relpath#"${norm_bidspath}"/}"
+        # A directory row (e.g. a .ds recording) gets a trailing '/', so that
+        # a directory-only pattern such as '*.ds/' matches it.
+        if [[ -d $f ]]; then
+          relpath+=/
+        fi
         if ! _libBIDSsh_path_is_ignored "$relpath"; then
           kept_files+=("$f")
         fi
