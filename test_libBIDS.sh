@@ -520,6 +520,25 @@ sub-01	bold	nii.gz	/a_bold.nii.gz	/a_bold.json" "$twice" "second call should ret
   return 0
 }
 
+test_extension_json_rows_to_column_json_path_bids_examples() {
+  # asl001 has JSON sidecars with the same name as their data files.
+  local table once
+  table=$(libBIDSsh_parse_bids_to_table "${bids_examples}/asl001")
+  once=$(libBIDSsh_extension_json_rows_to_column_json_path "$table")
+
+  # A trailing newline must not add a row.
+  assert_equals "$once" \
+    "$(libBIDSsh_extension_json_rows_to_column_json_path "${table}"$'\n')" \
+    "asl001 with a trailing newline should give the same rows" || return 1
+
+  # A second call must not add a second json_path column.
+  assert_equals "$once" \
+    "$(libBIDSsh_extension_json_rows_to_column_json_path "$once")" \
+    "asl001 second call should return the table unchanged" || return 1
+
+  return 0
+}
+
 test_table_column_to_array() {
   local table="subject	session
 sub-01	ses-1
@@ -700,6 +719,7 @@ run_test "Public API: libBIDSsh_drop_na_columns bids-examples" test_drop_na_colu
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path
 run_test "libBIDSsh_extension_json_rows_to_column_json_path ignores empty lines" test_extension_json_rows_to_column_json_path_trailing_newline
 run_test "libBIDSsh_extension_json_rows_to_column_json_path is idempotent" test_extension_json_rows_to_column_json_path_idempotent
+run_test "libBIDSsh_extension_json_rows_to_column_json_path bids-examples" test_extension_json_rows_to_column_json_path_bids_examples
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
