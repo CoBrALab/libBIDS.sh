@@ -694,6 +694,239 @@ sub-03	ses-3"
   return 0
 }
 
+test_table_iterator_direct_call() {
+  # A call outside a "while" or "if" must not stop the caller under set -e,
+  # and the row array must hold only the column keys.
+  local table="a	b
+1	2
+3	4"
+  declare -A row
+  libBIDSsh_table_iterator "$table" row
+  assert_equals "1 2" "${row[a]} ${row[b]}" "first direct call gives the first row" || return 1
+  local keys
+  keys="$(printf '%s\n' "${!row[@]}" | sort | tr '\n' ' ')"
+  assert_equals "a b " "$keys" "row keys must be the column names only" || return 1
+  libBIDSsh_table_iterator "$table" row
+  assert_equals "3 4" "${row[a]} ${row[b]}" "second direct call gives the second row" || return 1
+  local rc=0
+  libBIDSsh_table_iterator "$table" row || rc=$?
+  assert_equals "1" "$rc" "call after the last row returns 1" || return 1
+  assert_equals "0" "${#row[@]}" "row is empty after the last row" || return 1
+  return 0
+}
+
+test_table_iterator_state() {
+  # The cursor is not kept in the row array. A different table or different
+  # sort arguments start a new iteration. The same table continues.
+  local t1="a
+1
+2
+3"
+  local t2="a
+x
+y
+z"
+  declare -A row
+  local out=""
+
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "2" ]] && break
+  done
+  while libBIDSsh_table_iterator "$t2" row; do out+="${row[a]} "; done
+  assert_equals "x y z " "$out" "a new table after break starts at its first row" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  while libBIDSsh_table_iterator "$t1" row -r; do out+="${row[a]} "; done
+  assert_equals "3 2 1 " "$out" "new sort arguments after break start again" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
+  assert_equals "2 3 " "$out" "same table after break continues" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  row=()
+  while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
+  assert_equals "1 2 3 " "$out" "row=() after break starts again" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  libBIDSsh_table_iterator "" row || true
+  while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
+  assert_equals "1 2 3 " "$out" "an empty table resets the cursor" || return 1
+
+  # A new array that is declared but has no value starts again, also when
+  # saved state for that array name stays after a break (set -u is on).
+  # The helper runs in this shell (not in a subshell), so the state stays.
+  local _iter_out=""
+  _iter_first_row() {
+    local -A row
+    while libBIDSsh_table_iterator "$t1" row; do
+      _iter_out+="${row[a]} "
+      [[ "${row[a]}" == "1" ]] && break
+    done
+  }
+  _iter_first_row
+  _iter_out+="|"
+  _iter_first_row
+  unset -f _iter_first_row
+  assert_equals "1 |1 " "$_iter_out" "local -A row after break starts again" || return 1
+
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    [[ "${row[a]}" == "1" ]] && break
+  done
+  unset row
+  declare -A row
+  while libBIDSsh_table_iterator "$t1" row; do out+="${row[a]} "; done
+  assert_equals "1 2 3 " "$out" "unset row and declare -A row starts again" || return 1
+
+  local t3="__current_line	b
+7	p"
+  declare -A r
+  libBIDSsh_table_iterator "$t3" r
+  assert_equals "7" "${r[__current_line]}" "a column named __current_line keeps its value" || return 1
+
+  # Nested loops with different array names are independent.
+  declare -A inner
+  out=""
+  while libBIDSsh_table_iterator "$t1" row; do
+    while libBIDSsh_table_iterator "$t2" inner; do out+="${row[a]}${inner[a]} "; done
+  done
+  assert_equals "1x 1y 1z 2x 2y 2z 3x 3y 3z " "$out" "nested loops with two arrays" || return 1
+  return 0
+}
+
+test_table_iterator_empty_fields() {
+  # Empty fields must stay in their column (tab is not collapsed).
+  local table="a	b	c
+1		3
+4	5	"
+  declare -A row
+  local out=""
+  while libBIDSsh_table_iterator "$table" row; do
+    out+="[${row[a]}|${row[b]}|${row[c]}]"
+  done
+  assert_equals "[1||3][4|5|]" "$out" "empty fields keep their column" || return 1
+  return 0
+}
+
+# These names are arrays in other tests; here they are plain strings on purpose.
+# shellcheck disable=SC2128,SC2178
+test_table_iterator_no_globals() {
+  # The iterator must not change caller variables or add globals other than
+  # its own _LIBBIDSSH_ITER_* state.
+  local table="a	b
+2	x
+1	y"
+  local i=I lines=L headers=H values=V col=C arg=A sorted_data=S
+  local before after
+  before="$(compgen -v | sort)"
+  declare -A row
+  local n=0
+  while libBIDSsh_table_iterator "$table" row a; do n=$((n + 1)); done
+  after="$(compgen -v | sort)"
+  assert_equals "2" "$n" "iterates 2 rows" || return 1
+  assert_equals "I L H V C A S" "$i $lines $headers $values $col $arg $sorted_data" \
+    "caller variables are not changed" || return 1
+  local added
+  added="$(comm -13 <(echo "$before") <(echo "$after") |
+    grep -v -e '^_LIBBIDSSH_ITER_' -e '^before$' -e '^row$' -e '^n$' || true)"
+  assert_equals "" "$added" "no new global variables" || return 1
+  return 0
+}
+
+test_table_iterator_array_names() {
+  # The row array can have the name of a local variable of the iterator
+  # (for example "line" or "i"). The name reference must not resolve to a
+  # local of the iterator.
+  local table="a	b
+2	x
+1	y"
+  local out=""
+  declare -A line
+  while libBIDSsh_table_iterator "$table" line; do
+    out+="${line[a]}${line[b]} "
+  done
+  assert_equals "1y 2x " "$out" "row array named 'line'" || return 1
+  out=""
+  declare -A i
+  while libBIDSsh_table_iterator "$table" i a -r; do
+    out+="${i[a]}${i[b]} "
+  done
+  assert_equals "2x 1y " "$out" "row array named 'i'" || return 1
+  local nm
+  for nm in arg col idx resume table_data row_headers args_sig row_count \
+    arr_name arr_ref values headers lines header sorted_data current_line \
+    sort_keys reverse_sort name count; do
+    out=""
+    eval "declare -A ${nm}=()"
+    while libBIDSsh_table_iterator "$table" "${nm}"; do
+      eval "out+=\"\${${nm}[a]}\${${nm}[b]} \""
+    done
+    assert_equals "1y 2x " "$out" "row array named '${nm}'" || return 1
+    unset "${nm}"
+  done
+  # Names with the reserved prefix give an error
+  declare -A _lbit_row=()
+  local rc=0
+  libBIDSsh_table_iterator "$table" _lbit_row 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "reserved prefix '_lbit_' is refused" || return 1
+  return 0
+}
+
+test_table_iterator_bids_examples() {
+  # Iterate a real table (ds001). Each row gives the same order as "sort"
+  # for the same keys, and the row array holds only the column names.
+  local table table2
+  table="$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")"
+  table2="$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds002")"
+  local ncols nrows sc rc pc
+  ncols="$(head -n 1 <<<"$table" | awk -F'\t' '{print NF}')"
+  nrows="$(tail -n +2 <<<"$table" | wc -l | tr -d ' ')"
+  sc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x subject | cut -d: -f1)"
+  rc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x run | cut -d: -f1)"
+  pc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x path | cut -d: -f1)"
+  local expected
+  expected="$(tail -n +2 <<<"$table" |
+    sort --version-sort -t$'\t' "-k${sc},${sc}" "-k${rc},${rc}" | cut -f "${pc}")"
+
+  declare -A row
+  local n=0 bad_keys=0 got=""
+  while libBIDSsh_table_iterator "$table" row subject run; do
+    n=$((n + 1))
+    ((${#row[@]} == ncols)) || bad_keys=$((bad_keys + 1))
+    got+="${row[path]}"$'\n'
+  done
+  assert_equals "${nrows}" "$n" "ds001: one iteration for each data row" || return 1
+  assert_equals "0" "$bad_keys" "ds001: row keys are the column names only" || return 1
+  assert_equals "$expected" "${got%$'\n'}" "ds001: order is the same as sort" || return 1
+
+  # A direct call (not in "while" or "if") must not stop the test under set -e
+  libBIDSsh_table_iterator "$table" row subject run
+  assert_equals "$(head -n 1 <<<"$expected")" "${row[path]}" \
+    "ds001: direct call gives the first sorted row" || return 1
+
+  # The direct call leaves an open iteration on ds001, as a "break" does.
+  # A loop over a different table (ds002) must start at its first row.
+  local n2=0
+  n2="$(tail -n +2 <<<"$table2" | wc -l | tr -d ' ')"
+  n=0
+  while libBIDSsh_table_iterator "$table2" row; do n=$((n + 1)); done
+  assert_equals "${n2}" "$n" "ds002 after a break on ds001: all rows" || return 1
+  return 0
+}
+
 test_json_to_associative_array() {
   command -v jq >/dev/null 2>&1 || skip_test "jq not found"
   local json_file
@@ -835,6 +1068,12 @@ run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_arra
 run_test "Public API: libBIDSsh_table_column_to_array edge cases" test_table_column_to_array_edge_cases
 run_test "Public API: libBIDSsh_table_column_to_array bids-examples" test_table_column_to_array_bids_examples
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
+run_test "Public API: libBIDSsh_table_iterator direct call" test_table_iterator_direct_call
+run_test "Public API: libBIDSsh_table_iterator state" test_table_iterator_state
+run_test "Public API: libBIDSsh_table_iterator empty fields" test_table_iterator_empty_fields
+run_test "Public API: libBIDSsh_table_iterator no globals" test_table_iterator_no_globals
+run_test "Public API: libBIDSsh_table_iterator array names" test_table_iterator_array_names
+run_test "Public API: libBIDSsh_table_iterator on bids-examples" test_table_iterator_bids_examples
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
