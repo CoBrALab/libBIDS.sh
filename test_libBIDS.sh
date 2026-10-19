@@ -575,6 +575,28 @@ nested anat sub-01_desc-x_T1w.nii.gz"
   done
 }
 
+test_parse_bids_to_table_relative_columns_bids_examples() {
+  # A real dataset read through a 'derivatives/x/' link. Its own rows keep
+  # derivatives NA, its real pipeline (brainvisa) keeps its name.
+  local base link
+  base=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  link="${base}/derivatives/x"
+  mkdir -p "${base}/derivatives"
+  ln -s "${bids_examples}/ieeg_epilepsy" "${link}"
+
+  local via_link direct counts
+  via_link=$(libBIDSsh_parse_bids_to_table "${link}" |
+    awk -F '\t' -v OFS='\t' -v root="${link}/" '{ sub(root, "", $NF); print }')
+  direct=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ieeg_epilepsy" |
+    awk -F '\t' -v OFS='\t' -v root="${bids_examples}/ieeg_epilepsy/" '{ sub(root, "", $NF); print }')
+  counts=$(awk -F '\t' 'NR > 1 { n[$1]++ } END { for (k in n) print k, n[k] }' \
+    <<<"${via_link}" | LC_ALL=C sort)
+  assert_equals "NA 30
+brainvisa 2" "${counts}" "ieeg_epilepsy below 'derivatives/x/': derivatives column"
+  assert_equals "${direct}" "${via_link}" \
+    "ieeg_epilepsy gives the same table through a 'derivatives/x/' link"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1745,6 +1767,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_p
 run_test "Public API: libBIDSsh_parse_bids_to_table core and table files" test_parse_bids_to_table_core_files
 run_test "Public API: libBIDSsh_parse_bids_to_table discovery on bids-examples" test_parse_bids_to_table_discovery_bids_examples
 run_test "Public API: libBIDSsh_parse_bids_to_table relative columns" test_parse_bids_to_table_relative_columns
+run_test "Public API: libBIDSsh_parse_bids_to_table relative columns on bids-examples" test_parse_bids_to_table_relative_columns_bids_examples
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
