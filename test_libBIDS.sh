@@ -441,6 +441,35 @@ test_drop_na_columns_header_only() {
   return 0
 }
 
+test_drop_na_columns_bids_examples() {
+  # On real data, keep exactly the columns that have a value that is not NA.
+  local table
+  table=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+
+  # Find the expected header column by column, without drop_na_columns.
+  local -a header_fields
+  IFS=$'\t' read -r -a header_fields <<<"${table%%$'\n'*}"
+  local expected="" i
+  for ((i = 1; i <= ${#header_fields[@]}; i++)); do
+    if tail -n +2 <<<"$table" | cut -f "$i" | grep -qvx 'NA'; then
+      expected+="${expected:+$'\t'}${header_fields[i - 1]}"
+    fi
+  done
+
+  local cleaned
+  cleaned=$(libBIDSsh_drop_na_columns "$table")
+  assert_equals "$expected" "$(head -n 1 <<<"$cleaned")" \
+    "ds001 should keep only the columns that have data" || return 1
+
+  cleaned=$(libBIDSsh_drop_na_columns "${table}"$'\n')
+  assert_equals "$expected" "$(head -n 1 <<<"$cleaned")" \
+    "ds001 with a trailing newline should keep the columns that have data" || return 1
+  assert_equals "$(wc -l <<<"$table")" "$(wc -l <<<"$cleaned")" \
+    "ds001 with a trailing newline should keep all rows" || return 1
+
+  return 0
+}
+
 test_extension_json_rows_to_column_json_path() {
   local table="extension	path	subject
 nii.gz	/path/to/data.nii.gz	sub-1
@@ -635,6 +664,7 @@ run_test "Public API: libBIDSsh_drop_na_columns" test_drop_na_columns
 run_test "Public API: libBIDSsh_drop_na_columns short last row" test_drop_na_columns_short_last_row
 run_test "Public API: libBIDSsh_drop_na_columns trailing newline" test_drop_na_columns_trailing_newline
 run_test "Public API: libBIDSsh_drop_na_columns header only" test_drop_na_columns_header_only
+run_test "Public API: libBIDSsh_drop_na_columns bids-examples" test_drop_na_columns_bids_examples
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
