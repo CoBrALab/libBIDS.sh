@@ -402,6 +402,45 @@ A	C
   return 0
 }
 
+test_drop_na_columns_short_last_row() {
+  # The column count comes from the header, not from the last row.
+  local table="a	b	c
+1	NA	3
+4	NA"
+
+  local cleaned
+  cleaned=$(libBIDSsh_drop_na_columns "$table")
+  assert_equals "a	c
+1	3
+4	" "$cleaned" "short last row should not drop column c" || return 1
+
+  return 0
+}
+
+test_drop_na_columns_trailing_newline() {
+  # A trailing newline must not remove all columns.
+  local table
+  table=$'a\tb\tc\nNA\t1\tNA\n2\tNA\tNA\n'
+
+  local cleaned
+  cleaned=$(libBIDSsh_drop_na_columns "$table")
+  assert_equals "a	b
+NA	1
+2	NA" "$cleaned" "trailing newline should keep data columns" || return 1
+
+  return 0
+}
+
+test_drop_na_columns_header_only() {
+  # A table without data rows keeps its header.
+  local cleaned
+  cleaned=$(libBIDSsh_drop_na_columns "subject	task	path")
+  assert_equals "subject	task	path" "$cleaned" \
+    "header-only table should keep its header" || return 1
+
+  return 0
+}
+
 test_extension_json_rows_to_column_json_path() {
   local table="extension	path	subject
 nii.gz	/path/to/data.nii.gz	sub-1
@@ -593,6 +632,9 @@ run_test "Public API: libBIDSsh_table_filter column errors" test_table_filter_co
 run_test "Public API: libBIDSsh_table_filter on POSIX awk" test_table_filter_posix_awk
 run_test "Bash 4.3: empty arrays under set -u" test_empty_arrays_nounset
 run_test "Public API: libBIDSsh_drop_na_columns" test_drop_na_columns
+run_test "Public API: libBIDSsh_drop_na_columns short last row" test_drop_na_columns_short_last_row
+run_test "Public API: libBIDSsh_drop_na_columns trailing newline" test_drop_na_columns_trailing_newline
+run_test "Public API: libBIDSsh_drop_na_columns header only" test_drop_na_columns_header_only
 run_test "Public API: libBIDSsh_extension_json_rows_to_column_json_path" test_extension_json_rows_to_column_json_path
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator

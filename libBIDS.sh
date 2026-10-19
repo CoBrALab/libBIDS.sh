@@ -158,42 +158,47 @@ libBIDSsh_drop_na_columns() {
   # Remove columns from table data that contain only NA values
   # Usage: libBIDSsh_drop_na_columns "${table_data}"
   # Returns: Table data with NA-only columns removed through stdout
+  # The header gives the number of columns. Empty lines are ignored. A field
+  # that a short row does not have counts as NA and is output as empty.
+  # A header-only table (no data rows) is returned unchanged.
   # Example:
   #   cleaned=$(libBIDSsh_drop_na_columns "$data")
   local table_data="$1"
   awk -F'\t' '
-    BEGIN {OFS="\t"}
+    BEGIN {OFS="\t"; nrows = 0}
     NR == 1 {
         # Save header and initialize column tracking
         header = $0
-        for (i = 1; i <= NF; i++) {
+        hnf = NF
+        for (i = 1; i <= hnf; i++) {
             col_all_na[i] = 1  # Assume all columns are all NA initially
-            header_cols[i] = $i  # Store header names
+            header_fields[i] = $i  # Store header names
         }
         next
     }
+    NF == 0 { next }  # Ignore empty lines (for example a trailing newline)
     {
-        for (i = 1; i <= NF; i++) {
+        for (i = 1; i <= hnf && i <= NF; i++) {
             if ($i != "NA") {
                 col_all_na[i] = 0  # Mark column as not all NA
             }
         }
         # Store all rows for later printing
-        rows[NR] = $0
+        rows[++nrows] = $0
     }
     END {
-        # Determine which columns to keep
-        split(header, header_fields, /\t/)
-        for (i = 1; i <= NF; i++) {
-            if (!col_all_na[i]) {
-                cols_to_keep[i] = 1
+        # A table without data rows has no NA-only columns to remove
+        if (nrows == 0) {
+            if (NR > 0) {
+                print header
             }
+            exit
         }
 
         # Print header (only keeping non-NA columns)
         first_field = 1
-        for (i = 1; i <= NF; i++) {
-            if (cols_to_keep[i]) {
+        for (i = 1; i <= hnf; i++) {
+            if (!col_all_na[i]) {
                 if (!first_field) {
                     printf "%s", OFS
                 }
@@ -204,15 +209,15 @@ libBIDSsh_drop_na_columns() {
         printf "\n"
 
         # Print each row (only keeping non-NA columns)
-        for (j = 2; j <= NR; j++) {
-            split(rows[j], row_fields, /\t/)
+        for (j = 1; j <= nrows; j++) {
+            n = split(rows[j], row_fields, /\t/)
             first_field = 1
-            for (i = 1; i <= NF; i++) {
-                if (cols_to_keep[i]) {
+            for (i = 1; i <= hnf; i++) {
+                if (!col_all_na[i]) {
                     if (!first_field) {
                         printf "%s", OFS
                     }
-                    printf "%s", row_fields[i]
+                    printf "%s", (i <= n ? row_fields[i] : "")
                     first_field = 0
                 }
             }
