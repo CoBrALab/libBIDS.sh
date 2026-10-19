@@ -41,6 +41,12 @@ GitHub Actions (`.github/workflows/tests.yml`) runs the unit tests, parses every
 bids-examples dataset, and runs `shellcheck` for each push to `master` and for
 each pull request.
 
+Bash 4.3 is the minimum version. If you have a bash 4.3 binary, also run the
+suite with it (for example `/path/to/bash-4.3 ./test_libBIDS.sh`). Bash before
+4.4 stops with "unbound variable" on an empty array expansion under `set -u`,
+and newer Bash versions do not show this problem. CI runs the suite with bash 4.3
+too.
+
 ## Usage
 
 ### Sourcing the Library

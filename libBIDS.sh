@@ -54,7 +54,7 @@ libBIDSsh_table_filter() {
 
   # Convert row filters array to a delimiter-separated string that awk can parse
   local row_filters_str
-  row_filters_str=$(printf "%s\n" "${row_filters[@]}" | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
+  row_filters_str=$(printf "%s\n" ${row_filters[@]+"${row_filters[@]}"} | awk '{gsub(/:/, "\t"); print}' | paste -sd "\n" -)
 
   awk -v columns="${columns}" \
     -v row_filters_str="${row_filters_str}" \
@@ -784,7 +784,7 @@ libBIDSsh_parse_bids_to_table() {
   )
 
   # Add custom entities from plugins
-  for entity_pattern in "${CUSTOM_ENTITIES[@]}"; do
+  for entity_pattern in ${CUSTOM_ENTITIES[@]+"${CUSTOM_ENTITIES[@]}"}; do
     entities+=("$entity_pattern")
   done
 
@@ -825,7 +825,7 @@ libBIDSsh_parse_bids_to_table() {
       norm_bidspath=$(tr -s / <<<"${bidspath%/}")
       local -a kept_files=()
       local f relpath
-      for f in "${files[@]}"; do
+      for f in ${files[@]+"${files[@]}"}; do
         relpath=$(tr -s / <<<"$f")
         relpath="${relpath#"${norm_bidspath}"/}"
         if ! _libBIDSsh_path_is_ignored "$relpath"; then
@@ -847,16 +847,16 @@ libBIDSsh_parse_bids_to_table() {
   entities_order="sub tpl ses cohort sample task tracksys acq nuc voi ce trc stain rec dir run mod echo flip inv mt part proc hemi space split recording chunk atlas seg scale res den label desc"
 
   # Add custom entities to ordering
-  for entity_key in "${CUSTOM_ENTITY_KEYS[@]}"; do
+  for entity_key in ${CUSTOM_ENTITY_KEYS[@]+"${CUSTOM_ENTITY_KEYS[@]}"}; do
     entities_order+=" $entity_key"
   done
 
-  for entity_name in "${CUSTOM_ENTITY_NAMES[@]}"; do
+  for entity_name in ${CUSTOM_ENTITY_NAMES[@]+"${CUSTOM_ENTITY_NAMES[@]}"}; do
     entities_name_order+=$'\t'"$entity_name"
   done
 
   printf "derivatives\tdatatype\t%s\tsuffix\textension\tpath\n" "${entities_name_order}"
-  for file in "${files[@]}"; do
+  for file in ${files[@]+"${files[@]}"}; do
     declare -A file_info
     _libBIDSsh_parse_filename "${file}" file_info
     for key in derivatives datatype ${entities_order} suffix extension path; do
@@ -927,13 +927,13 @@ libBIDSsh_table_column_to_array() {
   if [[ "${unique}" == "true" ]]; then
     local -a unique_array
     local -A seen
-    for item in "${array_ref[@]}"; do
+    for item in ${array_ref[@]+"${array_ref[@]}"}; do
       if [[ -z "${seen[${item}]+x}" ]]; then
         unique_array+=("${item}")
         seen["${item}"]=1
       fi
     done
-    array_ref=("${unique_array[@]}")
+    array_ref=(${unique_array[@]+"${unique_array[@]}"})
   fi
 }
 
@@ -1014,7 +1014,7 @@ libBIDSsh_table_iterator() {
     if [[ ${#data_lines[@]} -gt 0 ]]; then
       readarray -t sorted_data < <(
         printf "%s\n" "${data_lines[@]}" |
-          sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+          sort --version-sort -t$'\t' ${sort_reverse_flag[@]+"${sort_reverse_flag[@]}"} ${sort_keys[@]+"${sort_keys[@]}"}
       ) || true
     else
       sorted_data=()
@@ -1038,7 +1038,7 @@ libBIDSsh_table_iterator() {
     if [[ ${#data_lines[@]} -gt 0 ]]; then
       readarray -t sorted_data < <(
         printf "%s\n" "${data_lines[@]}" |
-          sort --version-sort -t$'\t' "${sort_reverse_flag[@]}" "${sort_keys[@]}"
+          sort --version-sort -t$'\t' ${sort_reverse_flag[@]+"${sort_reverse_flag[@]}"} ${sort_keys[@]+"${sort_keys[@]}"}
       ) || true
     else
       sorted_data=()
