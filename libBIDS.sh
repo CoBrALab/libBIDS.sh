@@ -832,56 +832,13 @@ libBIDSsh_parse_bids_to_table() {
     return 1
   fi
 
-  # Build the pattern piece by piece
-  local base_pattern="*"
-
-  # Load custom entities from plugins
+  # Load custom entities from plugins. Only their key and name are used (as
+  # table columns); their glob 'pattern' is not used for matching.
   _libBIDSsh_load_custom_entities || return 1
 
-  # Entities components
-  # Extracted from schema with generate_entity_patterns.sh
-  local entities=(
-    "*(_sub-+([a-zA-Z0-9]))"
-    "*(_tpl-+([a-zA-Z0-9]))"
-    "*(_ses-+([a-zA-Z0-9]))"
-    "*(_cohort-+([a-zA-Z0-9]))"
-    "*(_sample-+([a-zA-Z0-9]))"
-    "*(_task-+([a-zA-Z0-9]))"
-    "*(_tracksys-+([a-zA-Z0-9]))"
-    "*(_acq-+([a-zA-Z0-9]))"
-    "*(_nuc-+([a-zA-Z0-9]))"
-    "*(_voi-+([a-zA-Z0-9]))"
-    "*(_ce-+([a-zA-Z0-9]))"
-    "*(_trc-+([a-zA-Z0-9]))"
-    "*(_stain-+([a-zA-Z0-9]))"
-    "*(_rec-+([a-zA-Z0-9]))"
-    "*(_dir-+([a-zA-Z0-9]))"
-    "*(_run-+([0-9]))"
-    "*(_mod-+([a-zA-Z0-9]))"
-    "*(_echo-+([0-9]))"
-    "*(_flip-+([0-9]))"
-    "*(_inv-+([0-9]))"
-    "*(_mt-+([a-zA-Z0-9]))"
-    "*(_part-+([a-zA-Z0-9]))"
-    "*(_proc-+([a-zA-Z0-9]))"
-    "*(_hemi-+([a-zA-Z0-9]))"
-    "*(_space-+([a-zA-Z0-9]))"
-    "*(_split-+([0-9]))"
-    "*(_recording-+([a-zA-Z0-9]))"
-    "*(_chunk-+([0-9]))"
-    "*(_atlas-+([a-zA-Z0-9]))"
-    "*(_seg-+([a-zA-Z0-9]))"
-    "*(_scale-+([a-zA-Z0-9]))"
-    "*(_res-+([a-zA-Z0-9]))"
-    "*(_den-+([a-zA-Z0-9]))"
-    "*(_label-+([a-zA-Z0-9]))"
-    "*(_desc-+([a-zA-Z0-9]))"
-  )
-
-  # Add custom entities from plugins
-  for entity_pattern in ${CUSTOM_ENTITIES[@]+"${CUSTOM_ENTITIES[@]}"}; do
-    entities+=("$entity_pattern")
-  done
+  # Files are matched by suffix and extension only: '*' + '_<suffix>' +
+  # '<extension>'. Entity tokens are not checked here (permissive matching);
+  # _libBIDSsh_parse_filename extracts them from the filename.
 
   # Suffixes from schema.json
   # jq -r .objects.suffixes.[].value schema.json | paste -s -d'|'
@@ -893,13 +850,7 @@ libBIDSsh_parse_bids_to_table() {
   # Matches schema 2.1.0-dev (BIDS 1.11.3-dev) and stable 2.0.0 (BIDS 1.11.2)
   local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.func.gii|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
 
-  # Piece together the pattern
-  local pattern=${base_pattern}
-  for entry in "${entities[@]}"; do
-    pattern+=${entry}
-  done
-  pattern+=${suffixes}
-  pattern+=${extensions}
+  local pattern="*${suffixes}${extensions}"
 
   shopt -s extglob
   shopt -s nullglob

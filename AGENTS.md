@@ -27,14 +27,15 @@ or run it directly.
 ```
 Directory tree → filename parsing → TSV table → filtering / extraction / iteration
                      ↓                   ↓
-              glob patterns         AWK processing
-              (35 entities)        (column/row ops)
+          suffix+extension         AWK processing
+              glob match           (column/row ops)
 ```
 
 ### Core Parsing Flow
 
-1. **Pattern matching**: Bash extended-glob patterns match 35 standard BIDS
-   entities (`sub`, `ses`, `task`, `run`, ...) plus suffixes and extensions.
+1. **Pattern matching**: a Bash extended-glob pattern `*_<suffix><extension>`
+   selects files by schema suffix and extension only. Entity tokens are not
+   checked during matching (permissive matching).
 2. **Filename parsing**: regex-based entity extraction into associative arrays.
 3. **JSON sidecar matching**: exact filename matching only (no inheritance
    resolution).
@@ -170,7 +171,7 @@ cd bids-examples
 ### Development Utilities
 
 ```bash
-# Generate entity glob patterns from the BIDS schema (requires schema.json + jq)
+# Generate the schema-derived parser blocks (requires schema.json + jq)
 ./generate_entity_patterns.sh
 ```
 
@@ -248,12 +249,9 @@ it removes the rows that match all filters and keeps all other rows.
 # Enable extended globbing
 shopt -s extglob nullglob globstar
 
-# Build BIDS entity patterns (35 standard entities, defined inline in the parser)
-local entities=(
-  "*(_sub-+([a-zA-Z0-9]))"
-  "*(_tpl-+([a-zA-Z0-9]))"
-  # ... 33 more entities
-)
+# Match by schema suffix and extension only (both lists are generated from
+# schema.json by generate_entity_patterns.sh)
+local pattern="*${suffixes}${extensions}"
 
 # Find files
 local files=("${bidspath}"/**/${pattern})
@@ -337,8 +335,9 @@ custom-entity extension guide, troubleshooting.
 
 ### generate_entity_patterns.sh
 
-Generates Bash glob patterns from the BIDS `schema.json`. Requires `schema.json`
-and `jq`. `schema.json` is the authoritative BIDS spec source.
+Generates the schema-derived blocks of the parser (entity key and name lists for
+the columns, the suffix and extension glob alternations, the datatype regex)
+from the BIDS `schema.json`. Requires `schema.json` and `jq`. `schema.json` is the authoritative BIDS spec source.
 
 ### custom/custom_entities.json.tpl
 
@@ -477,9 +476,10 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 ### Adding custom entities
 
 1. Copy `custom/custom_entities.json.tpl` to `custom/custom_entities.json`.
-2. Define each entity's `key` (short filename token, required), `name` (the column
-   header, required), and optionally `pattern` (Bash extended-glob). A `key` or
-   `name` that is the same as a standard entity, a fixed column or an earlier custom
+2. Define each entity's `key` (short filename token, required) and `name` (the
+   column header, required). The optional `pattern` field is not used for
+   matching: files are selected by suffix and extension only. A `key` or `name`
+   that is the same as a standard entity, a fixed column or an earlier custom
    entity is skipped with a warning to stderr.
 3. Source the library and call `libBIDSsh_parse_bids_to_table`; custom entities are
    appended after the standard ones.

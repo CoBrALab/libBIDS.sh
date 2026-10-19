@@ -454,7 +454,7 @@ done
 
 ### Adding non-BIDS entities 
 
-If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required), `name` (the long column header, required), and `pattern` (a bash extended-glob, optional):
+If your dataset uses an entity that is not part of the official BIDS specification, you can include them in the parsing logic via JSON file(s) in the `custom` directory next to the real `libBIDS.sh` file (a symlink to `libBIDS.sh` is resolved). Each entity object uses `key` (the short filename token, required) and `name` (the long column header, required). Each custom entity adds one column after the standard entity columns. The optional `pattern` field (a bash extended-glob) is not used for matching: the parser selects files by suffix and extension only, and then reads every `<key>-<value>` token from the filename:
 
 ```json
 {
