@@ -237,16 +237,20 @@ _libBIDSsh_parse_filename() {
   local path="$1"
   local -n arr="$2" # nameref to the associative array
 
-  # Extract the filename without path
-  local filename
-  filename=$(basename "${path}")
+  # Extract the filename without path. Parameter expansion is used instead of
+  # basename, dirname and tr, because a subprocess per file is slow.
+  local filename="${path##*/}"
 
   # Initialize the arrays
   arr=()
   local -a key_order=() # To maintain the order of keys
 
-  # Store the full path and filename
-  arr[path]=$(tr -s / <<<"${path}")
+  # Store the full path with runs of '/' collapsed to one (as 'tr -s /')
+  local clean_path="${path}"
+  while [[ ${clean_path} == *//* ]]; do
+    clean_path="${clean_path//\/\//\/}"
+  done
+  arr[path]="${clean_path}"
 
   arr[extension]="${filename#*.}"
 
@@ -254,8 +258,10 @@ _libBIDSsh_parse_filename() {
   # final component of the file's directory). Anchor to a whole path component
   # so an unrelated substring (e.g. "func" in "study_func/") cannot match.
   # ./generate_entity_patterns.sh -> datatype regex
-  local dir
-  dir=$(dirname "${path}")
+  local dir="."
+  if [[ ${clean_path} == */* ]]; then
+    dir="${clean_path%/*}"
+  fi
   if [[ ${dir} =~ (^|/)(anat|beh|dwi|eeg|emg|fmap|func|ieeg|meg|micr|motion|mrs|nirs|perf|pet|phenotype)$ ]]; then
     arr[datatype]="${BASH_REMATCH[2]}"
   else
@@ -868,12 +874,18 @@ libBIDSsh_parse_bids_to_table() {
   if ((honor_bidsignore)); then
     _libBIDSsh_compile_bidsignore "$bidspath" "$use_defaults"
     if ((${#_LIBBIDSSH_BIDSIGNORE_REGEX[@]} > 0)); then
-      local norm_bidspath
-      norm_bidspath=$(tr -s / <<<"${bidspath%/}")
+      # Collapse runs of '/' (as 'tr -s /') without a subprocess per file.
+      local norm_bidspath="${bidspath%/}"
+      while [[ ${norm_bidspath} == *//* ]]; do
+        norm_bidspath="${norm_bidspath//\/\//\/}"
+      done
       local -a kept_files=()
       local f relpath
       for f in ${files[@]+"${files[@]}"}; do
-        relpath=$(tr -s / <<<"$f")
+        relpath="$f"
+        while [[ ${relpath} == *//* ]]; do
+          relpath="${relpath//\/\//\/}"
+        done
         relpath="${relpath#"${norm_bidspath}"/}"
         if ! _libBIDSsh_path_is_ignored "$relpath"; then
           kept_files+=("$f")
