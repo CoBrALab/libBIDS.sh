@@ -896,34 +896,41 @@ libBIDSsh_table_column_to_array() {
   # Usage: libBIDSsh_table_column_to_array "${table_data}" "column_name" array_ref [unique] [exclude_NA]
   # Arguments:
   #   table_data: TSV-formatted string
-  #   column_name: Name or index of column to extract
+  #   column_name: Name or index (1..number of columns) of column to extract
   #   array_ref: Name of array variable to populate (declare -a)
   #   unique: (optional) "true" to return only unique values (default: true)
   #   exclude_NA: (optional) "true" to exclude NA values (default: true)
+  # Returns: 0 on success, also when no values remain (empty array);
+  #   1 if the column is not in the header
   # Example:
   #   declare -a subjects
   #   libBIDSsh_table_column_to_array "$data" "subject" subjects true true
-  local table_data="$1"
-  local column="$2"
-  local -n array_ref="$3" # nameref to the array variable
-  local unique="${4:-true}"
-  local exclude_NA="${5:-true}"
+  # All internal names have the _libbidssh_c2a_ prefix, so that they cannot
+  # hide the caller's variables or the array given by name in array_ref.
+  if [[ "$3" == _libbidssh_c2a_* ]]; then
+    echo "Error: array name '$3' is reserved" >&2
+    return 1
+  fi
+  local _libbidssh_c2a_column="$2"
+  local -n _libbidssh_c2a_ref="$3" # nameref to the array variable
+  local _libbidssh_c2a_unique="${4:-true}"
+  local _libbidssh_c2a_exclude_NA="${5:-true}"
+  local _libbidssh_c2a_values
+  local _libbidssh_c2a_line
+  local -A _libbidssh_c2a_seen=()
 
   # Clear the array in case it's not empty
-  array_ref=()
+  _libbidssh_c2a_ref=()
 
-  # Use awk to extract the column (skipping header row)
-  while IFS= read -r line; do
-    # Skip NA entries if exclude_NA is true
-    if [[ "${exclude_NA}" == "true" && "${line}" == "NA" ]]; then
-      continue
-    fi
-    array_ref+=("${line}")
-  done < <(awk -v col="${column}" '
+  # Use awk to extract the column (skipping header row). awk exits 1 if the
+  # column is not in the header. Otherwise it prints a final "." line, so
+  # that the command substitution keeps empty values at the end.
+  if ! _libbidssh_c2a_values=$(awk -v col="${_libbidssh_c2a_column}" '
         BEGIN { FS="\t" }
         NR == 1 {
+            col_idx = 0
             if (col ~ /^[0-9]+$/) {
-                col_idx = col
+                if (col + 0 >= 1 && col + 0 <= NF) col_idx = col + 0
             } else {
                 for (i = 1; i <= NF; i++) {
                     if ($i == col) {
@@ -932,30 +939,40 @@ libBIDSsh_table_column_to_array() {
                     }
                 }
             }
-            if (!col_idx) exit 1
+            if (!col_idx) {
+                not_found = 1
+                exit 1
+            }
             next  # Skip header row
         }
+        NF == 0 { next }  # Skip empty lines (e.g. a trailing newline)
         { print $col_idx }
-    ' <<<"${table_data}")
-
-  # Check if awk succeeded
-  if ((${#array_ref[@]} == 0)) && (($(wc -l <<<"${table_data}") > 1)); then
-    echo "Error: Column '${column}' not found or no data rows present" >&2
+        END {
+            if (not_found) exit 1
+            print "."
+        }
+    ' <<<"$1"); then
+    echo "Error: Column '${_libbidssh_c2a_column}' not found" >&2
     return 1
   fi
+  _libbidssh_c2a_values="${_libbidssh_c2a_values%.}"
 
-  # Apply unique filter if requested
-  if [[ "${unique}" == "true" ]]; then
-    local -a unique_array
-    local -A seen
-    for item in ${array_ref[@]+"${array_ref[@]}"}; do
-      if [[ -z "${seen[${item}]+x}" ]]; then
-        unique_array+=("${item}")
-        seen["${item}"]=1
+  while IFS= read -r _libbidssh_c2a_line; do
+    # Skip NA entries if exclude_NA is true
+    if [[ "${_libbidssh_c2a_exclude_NA}" == "true" &&
+      "${_libbidssh_c2a_line}" == "NA" ]]; then
+      continue
+    fi
+    # Apply unique filter if requested. The "k" prefix makes the key
+    # non-empty, because bash does not accept an empty subscript.
+    if [[ "${_libbidssh_c2a_unique}" == "true" ]]; then
+      if [[ -n "${_libbidssh_c2a_seen["k${_libbidssh_c2a_line}"]+x}" ]]; then
+        continue
       fi
-    done
-    array_ref=(${unique_array[@]+"${unique_array[@]}"})
-  fi
+      _libbidssh_c2a_seen["k${_libbidssh_c2a_line}"]=1
+    fi
+    _libbidssh_c2a_ref+=("${_libbidssh_c2a_line}")
+  done < <(printf '%s' "${_libbidssh_c2a_values}")
 }
 
 libBIDSsh_table_iterator() {

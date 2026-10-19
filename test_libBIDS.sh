@@ -554,6 +554,117 @@ sub-02	ses-1"
   return 0
 }
 
+# Each case runs in its own $(...) subshell on purpose.
+# shellcheck disable=SC2030,SC2031
+test_table_column_to_array_edge_cases() {
+  local table="subject	session	path
+sub-01	NA	/a
+sub-01	NA	/b
+sub-02	NA	/c"
+  local out rc
+
+  # A column that exists but has only NA values gives an empty array, not
+  # an error.
+  out=$(
+    exec 2>&1
+    declare -a values=(stale)
+    rc=0
+    libBIDSsh_table_column_to_array "$table" "session" values || rc=$?
+    echo "rc=${rc} n=${#values[@]}"
+  )
+  assert_equals "rc=0 n=0" "$out" "all-NA column must give rc=0 and an empty array" || return 1
+
+  # A column that is not in the header is an error, also with no data rows.
+  rc=0
+  out=$(
+    exec 2>&1
+    declare -a values
+    libBIDSsh_table_column_to_array "subject	path" "bogus" values
+  ) || rc=$?
+  assert_equals "1" "$rc" "missing column on a header-only table must give rc=1" || return 1
+  assert_contains "not found" "$out" "missing column must print an error" || return 1
+
+  # Column indices outside 1..number of columns are errors.
+  rc=0
+  (declare -a values; libBIDSsh_table_column_to_array "$table" 0 values) 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "column index 0 must give rc=1" || return 1
+  rc=0
+  (declare -a values; libBIDSsh_table_column_to_array "$table" 4 values) 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "column index > NF must give rc=1" || return 1
+
+  # A trailing newline and empty values must not crash the unique filter.
+  out=$(
+    exec 2>&1
+    declare -a values
+    libBIDSsh_table_column_to_array $'subject\tpath\nsub-01\t/a\n' "subject" values
+    declare -p values
+  )
+  assert_equals "$(declare -a values=(sub-01); declare -p values)" "$out" \
+    "trailing newline must not add an empty value" || return 1
+  out=$(
+    exec 2>&1
+    declare -a values
+    libBIDSsh_table_column_to_array $'subject\tpath\nsub-01\t/a\n\t/b\n\t/c' "subject" values
+    declare -p values
+  )
+  assert_equals "$(declare -a values=(sub-01 ""); declare -p values)" "$out" \
+    "empty values must be unique-filtered without error" || return 1
+
+  # The function must not change the caller's variables, and must fill
+  # caller arrays that have the same names as the old internal variables.
+  out=$(
+    exec 2>&1
+    item=keep
+    line=keep
+    declare -a values
+    libBIDSsh_table_column_to_array "$table" "subject" values
+    echo "item=${item} line=${line}"
+  )
+  assert_equals "item=keep line=keep" "$out" "caller item/line must not change" || return 1
+  local name
+  for name in line item seen unique_array table_data array_ref column; do
+    out=$(
+      exec 2>&1
+      declare -a "${name}"
+      libBIDSsh_table_column_to_array "$table" "subject" "${name}" true true
+      local -n _out_ref="${name}"
+      echo "${_out_ref[*]}"
+    )
+    assert_equals "sub-01 sub-02" "$out" "caller array named '${name}'" || return 1
+  done
+
+  return 0
+}
+
+test_table_column_to_array_bids_examples() {
+  # On real data, an all-NA column gives an empty array and status 0.
+  local table
+  table=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+
+  local -a subjects=()
+  libBIDSsh_table_column_to_array "$table" "subject" subjects
+  local expected
+  expected=$(find "${bids_examples}/ds001" -mindepth 1 -maxdepth 1 -type d \
+    -name 'sub-*' | wc -l)
+  assert_equals "16" "${expected// /}" "ds001 should have 16 subject folders" || return 1
+  assert_equals "${expected// /}" "${#subjects[@]}" \
+    "ds001 should give one value for each subject" || return 1
+
+  # ds001 has no sessions, so the session column has only NA values.
+  local out
+  out=$(
+    exec 2>&1
+    declare -a sessions=(stale)
+    rc=0
+    libBIDSsh_table_column_to_array "$table" "session" sessions || rc=$?
+    echo "rc=${rc} n=${#sessions[@]}"
+  )
+  assert_equals "rc=0 n=0" "$out" \
+    "ds001 session column should give rc=0 and an empty array" || return 1
+
+  return 0
+}
+
 test_table_iterator() {
   # Input is not sorted, so the order shows that the sort column is used.
   local table="subject	session
@@ -721,6 +832,8 @@ run_test "libBIDSsh_extension_json_rows_to_column_json_path ignores empty lines"
 run_test "libBIDSsh_extension_json_rows_to_column_json_path is idempotent" test_extension_json_rows_to_column_json_path_idempotent
 run_test "libBIDSsh_extension_json_rows_to_column_json_path bids-examples" test_extension_json_rows_to_column_json_path_bids_examples
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
+run_test "Public API: libBIDSsh_table_column_to_array edge cases" test_table_column_to_array_edge_cases
+run_test "Public API: libBIDSsh_table_column_to_array bids-examples" test_table_column_to_array_bids_examples
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
