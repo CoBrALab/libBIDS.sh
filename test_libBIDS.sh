@@ -323,6 +323,31 @@ test_parse_bids_to_table_without_jq() {
   return 0
 }
 
+test_parse_bids_to_table_func_gii() {
+  # GIFTI functional files (.func.gii) are in the BIDS schema extension list
+  # (schema 2.0.0 / BIDS 1.11.2 and later). The parser must list them.
+  local root="${test_tmpdir}/func_gii"
+  mkdir -p "${root}/sub-01/func" "${root}/derivatives/prep/sub-01/func"
+  touch "${root}/sub-01/func/sub-01_task-a_bold.nii.gz"
+  touch "${root}/derivatives/prep/sub-01/func/sub-01_task-a_hemi-L_space-fsaverage_bold.func.gii"
+
+  local table
+  table=$(libBIDSsh_parse_bids_to_table "$root")
+
+  assert_equals "3" "$(wc -l <<<"$table" | tr -d ' ')" \
+    "table should have a header, the .nii.gz row and the .func.gii row" || return 1
+
+  local gii_row
+  gii_row=$(awk -F '\t' -v OFS='\t' '
+    NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+    $col["extension"] == "func.gii" {
+      print $col["derivatives"], $col["hemisphere"], $col["space"], $col["suffix"]
+    }' <<<"$table")
+  assert_equals "prep	hemi-L	space-fsaverage	bold" "$gii_row" \
+    ".func.gii row should have derivatives, hemisphere, space and suffix" || return 1
+  return 0
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1425,6 +1450,7 @@ run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_f
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
+run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_to_table_func_gii
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement

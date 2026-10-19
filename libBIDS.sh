@@ -888,9 +888,10 @@ libBIDSsh_parse_bids_to_table() {
   local suffixes="_@(2PE|ADC|BF|Chimap|CARS|CONF|DIC|DF|FA|FLAIR|FLASH|FLUO|IRT1|M0map|MEGRE|MESE|MP2RAGE|MPE|MPM|MTR|MTRmap|MTS|MTVmap|MTsat|MWFmap|NLO|OCT|PC|PD|PDT2|PDmap|PDw|PLI|R1map|R2map|R2starmap|RB1COR|RB1map|S0map|SEM|SPIM|SR|T1map|T1rho|T1w|T2map|T2star|T2starmap|T2starw|T2w|TB1AFI|TB1DAM|TB1EPI|TB1RFM|TB1SRGE|TB1TFL|TB1map|TEM|UNIT1|VFA|angio|asl|aslcontext|asllabeling|beh|blood|bold|cbv|channels|colFA|coordsystem|defacemask|description|descriptions|dseg|dwi|eeg|electrodes|emg|epi|events|expADC|fieldmap|headshape|XPCT|ieeg|inplaneT1|inplaneT2|m0scan|magnitude|magnitude1|magnitude2|markers|mask|meg|motion|mrsi|mrsref|nirs|noRF|optodes|pet|phase|phase1|phase2|phasediff|photo|physio|physioevents|probseg|sbref|scans|sessions|stim|svs|trace|uCT|unloc)"
 
   # Allowed extensions
-  # jq -r .objects.extensions.[].value schema.json | paste -s -d'|'
-  # Stripped the ".*" and directory entries manually
-  local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
+  # ./generate_entity_patterns.sh -> extensions alternation (it drops ".*"
+  # and strips the trailing "/" of directory entries)
+  # Matches schema 2.1.0-dev (BIDS 1.11.3-dev) and stable 2.0.0 (BIDS 1.11.2)
+  local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.func.gii|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
 
   # Piece together the pattern
   local pattern=${base_pattern}
