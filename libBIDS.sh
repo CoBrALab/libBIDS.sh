@@ -321,7 +321,19 @@ _libBIDSsh_parse_filename() {
   done
   arr[path]="${clean_path}"
 
-  arr[extension]="${filename#*.}"
+  # The extension is the longest schema extension at the end of the filename.
+  # Thus a '.' in an entity value (not valid BIDS, but the glob accepts it, as
+  # in 'sub-01_acq-a.b_T1w.nii.gz') does not move the suffix and extension.
+  # Bash regex matching finds the leftmost match, which is the longest one.
+  # When no schema extension matches, the extension is all after the first '.'.
+  # jq -r .objects.extensions.[].value schema.json | paste -s -d'|'
+  # Removed ".*", "" and "/", and the trailing '/' of directory extensions
+  local ext_regex='\.(ave|bdf|bval|bvec|chn|con|dat|ds|dlabel\.nii|edf|eeg|fdt|fif|jpg|json|kdf|label\.gii|md|mefd|mhd|mrk|ome\.zarr|nii|nii\.gz|nwb|ome\.btf|ome\.tif|png|pos|raw|rst|set|snirf|sqd|tif|trg|tsv|tsv\.gz|txt|vhdr|vmrk)$'
+  if [[ ${filename} =~ ${ext_regex} ]]; then
+    arr[extension]="${BASH_REMATCH[1]}"
+  else
+    arr[extension]="${filename#*.}"
+  fi
 
   # The path relative to the dataset root gives datatype and derivatives.
   # Thus a root directory named 'anat', or a 'derivatives/<name>/' directory
@@ -357,7 +369,7 @@ _libBIDSsh_parse_filename() {
     arr[derivatives]="NA"
   fi
 
-  local name_no_ext="${filename%%.*}"
+  local name_no_ext="${filename%."${arr[extension]}"}"
 
   # Split into parts separated by _
   local -a parts
@@ -379,6 +391,13 @@ _libBIDSsh_parse_filename() {
     if [[ ${part} =~ ^([^-]+)-(.*)$ ]]; then
       local key="${BASH_REMATCH[1]}"
       local value="${BASH_REMATCH[2]}"
+      # A token with the key of a computed column (such as 'path-x') is not
+      # an entity. Ignore it, so that it does not change that column.
+      case ${key} in
+        path | datatype | derivatives | suffix | extension | _key_order)
+          continue
+          ;;
+      esac
       # Store the key-value pair
       arr["${key}"]="${key}-${value}"
       # Record the order of the key

@@ -177,6 +177,56 @@ test_parse_filename_relative_root() {
   assert_equals "fs" "${e[derivatives]:-}" "root '.' with a relative path" || return 1
 }
 
+test_parse_filename_reserved_keys_dots() {
+  # A token with the key of a computed column must not change that column.
+  declare -A a
+  _libBIDSsh_parse_filename "/d/sub-01/anat/sub-01_path-x_T1w.nii.gz" a "/d"
+  assert_equals "/d/sub-01/anat/sub-01_path-x_T1w.nii.gz" "${a[path]:-}" \
+    "'path-x' token must not replace the path" || return 1
+  declare -A b
+  _libBIDSsh_parse_filename \
+    "/d/sub-01/anat/sub-01_datatype-y_derivatives-z_suffix-s_extension-e_T1w.json" b "/d"
+  assert_equals "anat" "${b[datatype]:-}" "'datatype-y' must not replace datatype" || return 1
+  assert_equals "NA" "${b[derivatives]:-}" "'derivatives-z' must not replace derivatives" || return 1
+  assert_equals "T1w" "${b[suffix]:-}" "'suffix-s' must not replace suffix" || return 1
+  assert_equals "json" "${b[extension]:-}" "'extension-e' must not replace extension" || return 1
+  assert_equals "sub suffix extension datatype derivatives path" "${b[_key_order]:-}" \
+    "reserved tokens must not be in the key order" || return 1
+
+  # A '.' in an entity value must not move the suffix and extension.
+  declare -A c
+  _libBIDSsh_parse_filename "/d/sub-01/anat/sub-01_acq-a.b_T1w.nii.gz" c "/d"
+  assert_equals "acq-a.b" "${c[acq]:-}" "dotted acq value is kept" || return 1
+  assert_equals "T1w" "${c[suffix]:-}" "suffix with a dotted entity value" || return 1
+  assert_equals "nii.gz" "${c[extension]:-}" "extension with a dotted entity value" || return 1
+  # The longest schema extension is used.
+  declare -A d
+  _libBIDSsh_parse_filename "/d/sub-01/anat/sub-01_desc-x.y_T1w.dlabel.nii" d "/d"
+  assert_equals "dlabel.nii" "${d[extension]:-}" "longest schema extension" || return 1
+  assert_equals "desc-x.y" "${d[desc]:-}" "dotted desc value is kept" || return 1
+  # Without a schema extension, the extension is all after the first '.'.
+  declare -A e
+  _libBIDSsh_parse_filename "/d/sub-01/anat/sub-01_T1w.foo.bar" e "/d"
+  assert_equals "foo.bar" "${e[extension]:-}" "fallback to the first '.'" || return 1
+  assert_equals "T1w" "${e[suffix]:-}" "fallback suffix" || return 1
+
+  # The table rows have the correct values too.
+  local ds="${test_tmpdir}/reserved_dots"
+  mkdir -p "${ds}/sub-01/anat"
+  touch "${ds}/sub-01/anat/sub-01_path-x_T1w.nii.gz" \
+    "${ds}/sub-01/anat/sub-01_desc-a.b_T1w.nii.gz"
+  local table
+  table=$(libBIDSsh_parse_bids_to_table "${ds}")
+  local -a paths suffixes extensions
+  libBIDSsh_table_column_to_array "${table}" "path" paths false false
+  libBIDSsh_table_column_to_array "${table}" "suffix" suffixes true false
+  libBIDSsh_table_column_to_array "${table}" "extension" extensions true false
+  assert_contains "${ds}/sub-01/anat/sub-01_path-x_T1w.nii.gz" "${paths[*]}" \
+    "table path column keeps the real path" || return 1
+  assert_equals "T1w" "${suffixes[*]}" "table suffix column" || return 1
+  assert_equals "nii.gz" "${extensions[*]}" "table extension column" || return 1
+}
+
 test_parse_bids_to_table() {
   local bids_dir="${bids_examples}/ds001"
   local table
@@ -1757,6 +1807,7 @@ echo "---"
 run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Internal: _libBIDSsh_parse_filename relative to root" test_parse_filename_relative_root
+run_test "Internal: _libBIDSsh_parse_filename reserved keys and dots" test_parse_filename_reserved_keys_dots
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
 run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Internal: _libBIDSsh_load_custom_entities" test_load_custom_entities
