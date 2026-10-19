@@ -636,6 +636,34 @@ sub-02	NA	/c"
   return 0
 }
 
+test_table_column_to_array_bids_examples() {
+  # On real data, an all-NA column gives an empty array and status 0.
+  local table
+  table=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+
+  local -a subjects=()
+  libBIDSsh_table_column_to_array "$table" "subject" subjects
+  local expected
+  expected=$(find "${bids_examples}/ds001" -mindepth 1 -maxdepth 1 -type d \
+    -name 'sub-*' | wc -l)
+  assert_equals "16" "${expected// /}" "ds001 should have 16 subject folders" || return 1
+  assert_equals "${expected// /}" "${#subjects[@]}" \
+    "ds001 should give one value for each subject" || return 1
+
+  # ds001 has no sessions, so the session column has only NA values.
+  local out
+  out=$(
+    exec 2>&1
+    declare -a sessions=(stale)
+    rc=0
+    libBIDSsh_table_column_to_array "$table" "session" sessions || rc=$?
+    echo "rc=${rc} n=${#sessions[@]}"
+  )
+  assert_equals "rc=0 n=0" "$out" \
+    "ds001 session column should give rc=0 and an empty array" || return 1
+
+  return 0
+}
 
 test_table_iterator() {
   # Input is not sorted, so the order shows that the sort column is used.
@@ -805,6 +833,7 @@ run_test "libBIDSsh_extension_json_rows_to_column_json_path is idempotent" test_
 run_test "libBIDSsh_extension_json_rows_to_column_json_path bids-examples" test_extension_json_rows_to_column_json_path_bids_examples
 run_test "Public API: libBIDSsh_table_column_to_array" test_table_column_to_array
 run_test "Public API: libBIDSsh_table_column_to_array edge cases" test_table_column_to_array_edge_cases
+run_test "Public API: libBIDSsh_table_column_to_array bids-examples" test_table_column_to_array_bids_examples
 run_test "Public API: libBIDSsh_table_iterator" test_table_iterator
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
