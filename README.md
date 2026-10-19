@@ -257,10 +257,26 @@ declare -A json_data
 libBIDSsh_json_to_associative_array "file.json" json_data
 ```
 
+The function clears the target array before it adds the keys of the file.
+It returns 1 and writes a message to stderr if `jq` is missing, if the file
+is not valid JSON, if the top-level value is not an object, or if `jq` fails.
+On error, the target array is empty. It also returns 1 if the target is not
+an associative array (`declare -A`). Keys and values can contain `=`, quotes
+and newlines. A NUL character (`\u0000`) in a key, a string or an array item
+is removed. A key that is an empty string is skipped with a warning.
+
 **Value format:**
-- `type:value` for primitives (e.g., `string:hello`, `number:42`)
-- `array:item1,item2,item3` for arrays
+- `type:value` for primitives (e.g., `string:hello`, `number:42`,
+  `boolean:true`, `null:null`)
+- `array:item1,item2,item3` for arrays. A `null` item is empty, and an item
+  that is an array or an object is JSON text (e.g., `[{"a":1}]` gives
+  `array:{"a":1}`).
 - `object:{json_string}` for nested objects
+
+The array format is not reversible: items are joined with `,` and are not
+escaped. Thus `["Doe, J", "Smith, A"]` and `["Doe", " J", "Smith", " A"]` both
+give `array:Doe, J,Smith, A`, and `[null]` and `[""]` both give `array:`. If you
+need the exact items, read the file with `jq` directly.
 
 **Example:**
 
@@ -406,8 +422,11 @@ while libBIDSsh_table_iterator "$func_table" row "subject" "task" "run"; do
 
   if [[ "${row[json_path]}" != "NA" ]]; then
     declare -A json_data
+    # The array is cleared on each call, so no values stay from the last file.
     libBIDSsh_json_to_associative_array "${row[json_path]}" json_data
     echo "  TR: ${json_data[RepetitionTime]:-NA}"
+    # TaskName is in the inherited sidecar task-rest_bold.json at the dataset
+    # root. json_path is only the sidecar with the same name, so this is NA.
     echo "  Task: ${json_data[TaskName]:-NA}"
   fi
 done
