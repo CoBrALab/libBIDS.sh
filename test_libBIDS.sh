@@ -480,6 +480,41 @@ fs NA NA NA participants tsv derivatives/fs/participants.tsv" "$rows" \
     "core, table and suffix-only files with the stem as suffix"
 }
 
+test_parse_bids_to_table_discovery_bids_examples() {
+  # The same file discovery on real bids-examples datasets.
+  local paths
+  paths=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds000246" |
+    awk -F '\t' -v root="${bids_examples}/ds000246/" 'NR > 1 && $NF ~ /\.ds(\/|$)/ {
+      sub(root, "", $NF); print $NF
+    }' | LC_ALL=C sort)
+  assert_equals "sub-0001/meg/sub-0001_task-AEF_run-01_meg.ds
+sub-0001/meg/sub-0001_task-AEF_run-02_meg.ds
+sub-emptyroom/meg/sub-emptyroom_task-noise_run-01_meg.ds" "$paths" \
+    "ds000246: the .ds directories are rows, the files inside them are not"
+
+  local rows
+  rows=$({
+    libBIDSsh_parse_bids_to_table "${bids_examples}/ds001"
+    libBIDSsh_parse_bids_to_table "${bids_examples}/ds000248"
+  } | awk -F '\t' -v ex="${bids_examples}/" '
+      $NF ~ /\/(ds001\/participants\.tsv|ds000248\/T1w\.json)$/ {
+        sub(ex, "", $NF); print $2, $(NF - 2), $(NF - 1), $NF
+      }')
+  assert_equals "NA participants tsv ds001/participants.tsv
+NA T1w json ds000248/T1w.json" "$rows" \
+    "ds001 participants.tsv and ds000248 root T1w.json are rows"
+
+  rows=$(libBIDSsh_parse_bids_to_table "${bids_examples}/pheno004" |
+    awk -F '\t' -v root="${bids_examples}/pheno004/" '$2 == "phenotype" {
+      sub(root, "", $NF); print $(NF - 2), $(NF - 1), $NF
+    }' | LC_ALL=C sort)
+  assert_equals "ace json phenotype/ace.json
+ace tsv phenotype/ace.tsv
+demographics json phenotype/demographics.json
+demographics tsv phenotype/demographics.tsv" "$rows" \
+    "pheno004: phenotype files have datatype 'phenotype'"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1589,6 +1624,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_par
 run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test_parse_bids_to_table_symlinked_dirs
 run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_parse_bids_to_table_directory_recordings
 run_test "Public API: libBIDSsh_parse_bids_to_table core and table files" test_parse_bids_to_table_core_files
+run_test "Public API: libBIDSsh_parse_bids_to_table discovery on bids-examples" test_parse_bids_to_table_discovery_bids_examples
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
