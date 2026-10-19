@@ -288,6 +288,11 @@ libBIDSsh_table_column_to_array "$table_data" "column" array_var [unique] [exclu
 - `unique`: "true" (default) to return only unique values
 - `exclude_NA`: "true" (default) to exclude NA values
 
+**Returns:** 0 on success, also when no values remain (for example, a column
+that has only `NA` values gives an empty array). 1, with an error on stderr,
+when the column is not in the header or the index is not in 1 to the number of
+columns. Array names that start with `_libbidssh_c2a_` are reserved.
+
 **Example:**
 
 ```bash
