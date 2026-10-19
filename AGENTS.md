@@ -12,7 +12,7 @@ for neuroimaging data. The design follows a pipeline pattern: functions accept a
 TSV string and return a processed TSV string.
 
 **Key characteristics:**
-- Bash library (about 1100 lines), functional/pipeline style
+- Bash library (about 1500 lines), functional/pipeline style
 - AWK-based data processing for TSV filtering and column operations
 - Extensible custom entity support via JSON configurations
 - Zero-dependency core (`jq` optional, for JSON features and custom entities)
@@ -339,7 +339,7 @@ fi
 
 ### libBIDS.sh
 
-**Purpose**: Main library containing all functionality (about 1100 lines).
+**Purpose**: Main library containing all functionality (about 1500 lines).
 
 **Approximate section map** (verify with `grep -n '^libBIDSsh_\|^_libBIDSsh_' libBIDS.sh`):
 - Version check + strict mode — top of file
