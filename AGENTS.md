@@ -483,8 +483,8 @@ libBIDSsh_json_to_associative_array "file.json" metadata
 
 1. **Silent `jq` failures** — custom-entity / JSON features fail (with an error to
    stderr) if `jq` is missing. `libBIDSsh_json_to_associative_array` also returns 1
-   (and leaves its array empty) if `jq` is missing, the file is not valid JSON, or
-   the top level is not an object. Its `array:a,b` value format is lossy: items
+   (and leaves its array empty) if `jq` is missing, the file is not valid JSON,
+   the top level is not an object, or the target is not a `declare -A` array. Its `array:a,b` value format is lossy: items
    are joined with `,` without escapes, and `null` items are empty.
 2. **Permissive pattern matching** — may match files that are not valid BIDS.
 3. **JSON sidecars** — `..._json_rows_to_column_json_path` matches only a JSON file
