@@ -439,7 +439,12 @@ module-level `_LIBBIDSSH_ITER_*` associative arrays, keyed by the row array name
 start a new iteration; the state is removed after the last row. After a `break`,
 the same array + table + sort args continue where they stopped; `row=()` or a call
 with an empty table (`libBIDSsh_table_iterator "" row || true`) starts again. Nested
-loops must use different array names (the state is keyed by the name).
+loops must use different array names (the state is keyed by the name). Do not
+change the table string inside the loop body (a changed table starts again from
+row 0). After a `break`, the state (a copy of the table and its sorted rows) stays
+in memory until the next call or a reset. Row array names that start with `_lbit_`
+are reserved (all locals of the iterator use this prefix, so names like `line` or
+`i` are safe).
 
 ### Processing JSON metadata
 

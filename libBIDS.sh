@@ -989,15 +989,15 @@ declare -gA _LIBBIDSSH_ITER_ROWS=()
 _libBIDSsh_iterator_clear() {
   # Remove the cached state of libBIDSsh_table_iterator for one row array.
   # Usage: _libBIDSsh_iterator_clear "<array_name>"
-  local name="$1"
-  local count="${_LIBBIDSSH_ITER_COUNT[${name}]:-0}"
-  local i
-  for ((i = 0; i < count; i++)); do
-    unset "_LIBBIDSSH_ITER_ROWS[${name}:${i}]"
+  local _lbit_name="$1"
+  local _lbit_count="${_LIBBIDSSH_ITER_COUNT[${_lbit_name}]:-0}"
+  local _lbit_i
+  for ((_lbit_i = 0; _lbit_i < _lbit_count; _lbit_i++)); do
+    unset "_LIBBIDSSH_ITER_ROWS[${_lbit_name}:${_lbit_i}]"
   done
-  unset "_LIBBIDSSH_ITER_SIG[${name}]" "_LIBBIDSSH_ITER_TABLE[${name}]" \
-    "_LIBBIDSSH_ITER_POS[${name}]" \
-    "_LIBBIDSSH_ITER_COUNT[${name}]" "_LIBBIDSSH_ITER_HEADER[${name}]"
+  unset "_LIBBIDSSH_ITER_SIG[${_lbit_name}]" "_LIBBIDSSH_ITER_TABLE[${_lbit_name}]" \
+    "_LIBBIDSSH_ITER_POS[${_lbit_name}]" \
+    "_LIBBIDSSH_ITER_COUNT[${_lbit_name}]" "_LIBBIDSSH_ITER_HEADER[${_lbit_name}]"
 }
 
 libBIDSsh_table_iterator() {
@@ -1020,7 +1020,12 @@ libBIDSsh_table_iterator() {
   #   continues after the last row. To start again from the first row, empty
   #   the array first (row=()), or call the function once with an empty table
   #   (libBIDSsh_table_iterator "" row || true). An inner loop that runs while
-  #   an outer loop is active must use a different array name.
+  #   an outer loop is active must use a different array name. Do not change
+  #   the table string inside the loop body: a changed table starts again from
+  #   the first row. After a "break", the state (a copy of the table and its
+  #   sorted rows) stays in memory until the next call with that array name;
+  #   use one of the resets above to remove it. Array names that start with
+  #   "_lbit_" are reserved.
   # Example:
   #   declare -A row
   #   while libBIDSsh_table_iterator "$data" row "subject" "session" -r; do
@@ -1030,162 +1035,168 @@ libBIDSsh_table_iterator() {
     echo "Error: Missing array reference argument" >&2
     return 1
   fi
-  local arr_name="$2"
-  local -n arr_ref=$2 # Name reference to the associative array
+  # Local variables use the private prefix "_lbit_", so that they do not hide
+  # the caller's array from the name reference. Refuse names with this prefix.
+  if [[ "$2" == _lbit_* ]]; then
+    echo "Error: Array name '$2' uses the reserved prefix '_lbit_'" >&2
+    return 1
+  fi
+  local _lbit_arr_name="$2"
+  local -n _lbit_arr_ref=$2 # Name reference to the associative array
 
-  local arg col i idx line
-  local args_sig=""
-  for arg in "${@:3}"; do
-    args_sig+=$'\x1f'"${arg}"
+  local _lbit_arg _lbit_col _lbit_i _lbit_idx _lbit_line
+  local _lbit_args_sig=""
+  for _lbit_arg in "${@:3}"; do
+    _lbit_args_sig+=$'\x1f'"${_lbit_arg}"
   done
 
   # Continue the active iteration only if the sort arguments and the table are
   # the same, and the caller did not empty the array since the last call.
   # The table is compared last, with "[" (a plain string compare), because a
   # compare of a large table is the slowest step of a call.
-  local resume=false
-  if [[ -n "${_LIBBIDSSH_ITER_SIG[${arr_name}]+x}" &&
-    "${_LIBBIDSSH_ITER_SIG[${arr_name}]}" == "${args_sig}" &&
-    ${#arr_ref[@]} -gt 0 ]] &&
-    [ "${1:-}" = "${_LIBBIDSSH_ITER_TABLE[${arr_name}]}" ]; then
-    resume=true
+  local _lbit_resume=false
+  if [[ -n "${_LIBBIDSSH_ITER_SIG[${_lbit_arr_name}]+x}" &&
+    "${_LIBBIDSSH_ITER_SIG[${_lbit_arr_name}]}" == "${_lbit_args_sig}" &&
+    ${#_lbit_arr_ref[@]} -gt 0 ]] &&
+    [ "${1:-}" = "${_LIBBIDSSH_ITER_TABLE[${_lbit_arr_name}]}" ]; then
+    _lbit_resume=true
   fi
 
   # Start a new iteration: split the table and sort the rows once
-  if [[ "${resume}" == false ]]; then
-    _libBIDSsh_iterator_clear "${arr_name}"
-    local table_data="${1:-}"
+  if [[ "${_lbit_resume}" == false ]]; then
+    _libBIDSsh_iterator_clear "${_lbit_arr_name}"
+    local _lbit_table_data="${1:-}"
     shift 2 # Remaining arguments are sort columns or options
 
     # Empty input: nothing to iterate (this also resets the state)
-    if [[ -z "${table_data}" ]]; then
-      arr_ref=()
+    if [[ -z "${_lbit_table_data}" ]]; then
+      _lbit_arr_ref=()
       return 1
     fi
 
     # Handle options
-    local reverse_sort=false
-    local -a sort_columns=()
-    for arg in "$@"; do
-      if [[ "$arg" == "-r" ]]; then
-        reverse_sort=true
+    local _lbit_reverse_sort=false
+    local -a _lbit_sort_columns=()
+    for _lbit_arg in "$@"; do
+      if [[ "$_lbit_arg" == "-r" ]]; then
+        _lbit_reverse_sort=true
       else
-        sort_columns+=("$arg")
+        _lbit_sort_columns+=("$_lbit_arg")
       fi
     done
 
     # Read all lines into an array (empty lines are dropped)
-    local -a lines=()
-    IFS=$'\n' read -d '' -r -a lines <<<"${table_data}" || true
+    local -a _lbit_lines=()
+    IFS=$'\n' read -d '' -r -a _lbit_lines <<<"${_lbit_table_data}" || true
 
     # Handle empty input
-    if [[ ${#lines[@]} -eq 0 ]]; then
-      arr_ref=()
+    if [[ ${#_lbit_lines[@]} -eq 0 ]]; then
+      _lbit_arr_ref=()
       return 1
     fi
 
     # Extract header and data lines
-    local header="${lines[0]}"
-    local -a data_lines=("${lines[@]:1}")
-    local -a headers=()
-    line="${header//$'\t'/$'\x1f'}"
-    IFS=$'\x1f' read -r -a headers <<<"${line}"
+    local _lbit_header="${_lbit_lines[0]}"
+    local -a _lbit_data_lines=("${_lbit_lines[@]:1}")
+    local -a _lbit_headers=()
+    _lbit_line="${_lbit_header//$'\t'/$'\x1f'}"
+    IFS=$'\x1f' read -r -a _lbit_headers <<<"${_lbit_line}"
 
     # A header with no column names gives no keys to set
-    if [[ -z "${header//$'\t'/}" ]]; then
-      arr_ref=()
+    if [[ -z "${_lbit_header//$'\t'/}" ]]; then
+      _lbit_arr_ref=()
       return 1
     fi
 
     # Build sort keys (-k options for sort, 1-based). With no sort columns,
     # sort by all columns left to right.
-    local -a sort_keys=()
-    if ((${#sort_columns[@]} > 0)); then
-      local -A column_indices=()
-      for i in "${!headers[@]}"; do
-        if [[ -n "${headers[i]}" ]]; then
-          column_indices["${headers[i]}"]=${i}
+    local -a _lbit_sort_keys=()
+    if ((${#_lbit_sort_columns[@]} > 0)); then
+      local -A _lbit_column_indices=()
+      for _lbit_i in "${!_lbit_headers[@]}"; do
+        if [[ -n "${_lbit_headers[_lbit_i]}" ]]; then
+          _lbit_column_indices["${_lbit_headers[_lbit_i]}"]=${_lbit_i}
         fi
       done
-      for col in "${sort_columns[@]}"; do
-        if [[ -n "${col}" && -n "${column_indices[${col}]+x}" ]]; then
-          idx=$((column_indices["${col}"] + 1))
-          sort_keys+=("-k$idx,$idx")
+      for _lbit_col in "${_lbit_sort_columns[@]}"; do
+        if [[ -n "${_lbit_col}" && -n "${_lbit_column_indices[${_lbit_col}]+x}" ]]; then
+          _lbit_idx=$((_lbit_column_indices["${_lbit_col}"] + 1))
+          _lbit_sort_keys+=("-k$_lbit_idx,$_lbit_idx")
         else
-          echo "Error: Column '${col}' not found in header" >&2
+          echo "Error: Column '${_lbit_col}' not found in header" >&2
           return 1
         fi
       done
     else
-      for i in "${!headers[@]}"; do
-        idx=$((i + 1))
-        sort_keys+=("-k$idx,$idx")
+      for _lbit_i in "${!_lbit_headers[@]}"; do
+        _lbit_idx=$((_lbit_i + 1))
+        _lbit_sort_keys+=("-k$_lbit_idx,$_lbit_idx")
       done
     fi
 
     # Add reverse flag if needed
-    local -a sort_reverse_flag=()
-    if [[ "$reverse_sort" == true ]]; then
-      sort_reverse_flag=("-r")
+    local -a _lbit_sort_reverse_flag=()
+    if [[ "$_lbit_reverse_sort" == true ]]; then
+      _lbit_sort_reverse_flag=("-r")
     fi
 
     # Sort the data lines once (handle empty case)
-    local -a sorted_data=()
-    if [[ ${#data_lines[@]} -gt 0 ]]; then
-      readarray -t sorted_data < <(
-        printf "%s\n" "${data_lines[@]}" |
-          sort --version-sort -t$'\t' ${sort_reverse_flag[@]+"${sort_reverse_flag[@]}"} ${sort_keys[@]+"${sort_keys[@]}"}
+    local -a _lbit_sorted_data=()
+    if [[ ${#_lbit_data_lines[@]} -gt 0 ]]; then
+      readarray -t _lbit_sorted_data < <(
+        printf "%s\n" "${_lbit_data_lines[@]}" |
+          sort --version-sort -t$'\t' ${_lbit_sort_reverse_flag[@]+"${_lbit_sort_reverse_flag[@]}"} ${_lbit_sort_keys[@]+"${_lbit_sort_keys[@]}"}
       ) || true
     fi
 
     # No data rows: nothing to iterate
-    if [[ ${#sorted_data[@]} -eq 0 ]]; then
-      arr_ref=()
+    if [[ ${#_lbit_sorted_data[@]} -eq 0 ]]; then
+      _lbit_arr_ref=()
       return 1
     fi
 
     # Store the state for the next calls
-    for i in "${!sorted_data[@]}"; do
-      _LIBBIDSSH_ITER_ROWS["${arr_name}:${i}"]="${sorted_data[i]}"
+    for _lbit_i in "${!_lbit_sorted_data[@]}"; do
+      _LIBBIDSSH_ITER_ROWS["${_lbit_arr_name}:${_lbit_i}"]="${_lbit_sorted_data[_lbit_i]}"
     done
-    _LIBBIDSSH_ITER_COUNT["${arr_name}"]=${#sorted_data[@]}
-    _LIBBIDSSH_ITER_HEADER["${arr_name}"]="${header}"
-    _LIBBIDSSH_ITER_POS["${arr_name}"]=0
-    _LIBBIDSSH_ITER_SIG["${arr_name}"]="${args_sig}"
-    _LIBBIDSSH_ITER_TABLE["${arr_name}"]="${table_data}"
+    _LIBBIDSSH_ITER_COUNT["${_lbit_arr_name}"]=${#_lbit_sorted_data[@]}
+    _LIBBIDSSH_ITER_HEADER["${_lbit_arr_name}"]="${_lbit_header}"
+    _LIBBIDSSH_ITER_POS["${_lbit_arr_name}"]=0
+    _LIBBIDSSH_ITER_SIG["${_lbit_arr_name}"]="${_lbit_args_sig}"
+    _LIBBIDSSH_ITER_TABLE["${_lbit_arr_name}"]="${_lbit_table_data}"
   fi
 
-  local current_line="${_LIBBIDSSH_ITER_POS[${arr_name}]}"
-  local row_count="${_LIBBIDSSH_ITER_COUNT[${arr_name}]}"
+  local _lbit_current_line="${_LIBBIDSSH_ITER_POS[${_lbit_arr_name}]}"
+  local _lbit_row_count="${_LIBBIDSSH_ITER_COUNT[${_lbit_arr_name}]}"
 
   # If we're at the end, remove the state and return failure
-  if ((current_line >= row_count)); then
-    _libBIDSsh_iterator_clear "${arr_name}"
-    arr_ref=()
+  if ((_lbit_current_line >= _lbit_row_count)); then
+    _libBIDSsh_iterator_clear "${_lbit_arr_name}"
+    _lbit_arr_ref=()
     return 1
   fi
 
   # Split the header and the current row on tabs. A non-whitespace IFS keeps
   # empty fields, so values do not move to a different column.
-  local -a row_headers=() values=()
-  line="${_LIBBIDSSH_ITER_HEADER[${arr_name}]//$'\t'/$'\x1f'}"
-  IFS=$'\x1f' read -r -a row_headers <<<"${line}"
-  line="${_LIBBIDSSH_ITER_ROWS[${arr_name}:${current_line}]//$'\t'/$'\x1f'}"
-  IFS=$'\x1f' read -r -a values <<<"${line}"
+  local -a _lbit_row_headers=() _lbit_values=()
+  _lbit_line="${_LIBBIDSSH_ITER_HEADER[${_lbit_arr_name}]//$'\t'/$'\x1f'}"
+  IFS=$'\x1f' read -r -a _lbit_row_headers <<<"${_lbit_line}"
+  _lbit_line="${_LIBBIDSSH_ITER_ROWS[${_lbit_arr_name}:${_lbit_current_line}]//$'\t'/$'\x1f'}"
+  IFS=$'\x1f' read -r -a _lbit_values <<<"${_lbit_line}"
 
   # Store key-value pairs in the array (read drops a trailing empty field)
-  arr_ref=()
-  for i in "${!row_headers[@]}"; do
-    [[ -n "${row_headers[i]}" ]] || continue
-    if [[ -n "${values[i]+x}" ]]; then
-      arr_ref["${row_headers[i]}"]="${values[i]}"
+  _lbit_arr_ref=()
+  for _lbit_i in "${!_lbit_row_headers[@]}"; do
+    [[ -n "${_lbit_row_headers[_lbit_i]}" ]] || continue
+    if [[ -n "${_lbit_values[_lbit_i]+x}" ]]; then
+      _lbit_arr_ref["${_lbit_row_headers[_lbit_i]}"]="${_lbit_values[_lbit_i]}"
     else
-      arr_ref["${row_headers[i]}"]=""
+      _lbit_arr_ref["${_lbit_row_headers[_lbit_i]}"]=""
     fi
   done
 
   # Move the cursor to the next row
-  _LIBBIDSSH_ITER_POS["${arr_name}"]=$((current_line + 1))
+  _LIBBIDSSH_ITER_POS["${_lbit_arr_name}"]=$((_lbit_current_line + 1))
 
   return 0
 }
@@ -1218,6 +1229,7 @@ libBIDSsh_json_to_associative_array() {
     # Remove quotes from key (jq outputs keys with quotes)
     key="${key%\"}"
     key="${key#\"}"
+    # shellcheck disable=SC2034 # arr_ref is a nameref to the caller's array
     arr_ref["$key"]="$value"
   done < <(jq -r 'to_entries[] |
         "\(.key)=\(

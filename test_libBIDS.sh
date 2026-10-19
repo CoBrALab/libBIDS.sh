@@ -820,6 +820,45 @@ test_table_iterator_no_globals() {
   return 0
 }
 
+test_table_iterator_array_names() {
+  # The row array can have the name of a local variable of the iterator
+  # (for example "line" or "i"). The name reference must not resolve to a
+  # local of the iterator.
+  local table="a	b
+2	x
+1	y"
+  local out=""
+  declare -A line
+  while libBIDSsh_table_iterator "$table" line; do
+    out+="${line[a]}${line[b]} "
+  done
+  assert_equals "1y 2x " "$out" "row array named 'line'" || return 1
+  out=""
+  declare -A i
+  while libBIDSsh_table_iterator "$table" i a -r; do
+    out+="${i[a]}${i[b]} "
+  done
+  assert_equals "2x 1y " "$out" "row array named 'i'" || return 1
+  local nm
+  for nm in arg col idx resume table_data row_headers args_sig row_count \
+    arr_name arr_ref values headers lines header sorted_data current_line \
+    sort_keys reverse_sort name count; do
+    out=""
+    eval "declare -A ${nm}=()"
+    while libBIDSsh_table_iterator "$table" "${nm}"; do
+      eval "out+=\"\${${nm}[a]}\${${nm}[b]} \""
+    done
+    assert_equals "1y 2x " "$out" "row array named '${nm}'" || return 1
+    unset "${nm}"
+  done
+  # Names with the reserved prefix give an error
+  declare -A _lbit_row=()
+  local rc=0
+  libBIDSsh_table_iterator "$table" _lbit_row 2>/dev/null || rc=$?
+  assert_equals "1" "$rc" "reserved prefix '_lbit_' is refused" || return 1
+  return 0
+}
+
 test_json_to_associative_array() {
   command -v jq >/dev/null 2>&1 || skip_test "jq not found"
   local json_file
@@ -965,6 +1004,7 @@ run_test "Public API: libBIDSsh_table_iterator direct call" test_table_iterator_
 run_test "Public API: libBIDSsh_table_iterator state" test_table_iterator_state
 run_test "Public API: libBIDSsh_table_iterator empty fields" test_table_iterator_empty_fields
 run_test "Public API: libBIDSsh_table_iterator no globals" test_table_iterator_no_globals
+run_test "Public API: libBIDSsh_table_iterator array names" test_table_iterator_array_names
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
