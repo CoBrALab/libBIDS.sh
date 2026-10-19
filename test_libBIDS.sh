@@ -1030,6 +1030,36 @@ test_json_to_associative_array_errors() {
   return 0
 }
 
+test_json_to_associative_array_bids_examples() {
+  # Real sidecars from bids-examples. GeneratedBy in a derivatives
+  # dataset_description.json is an array of objects; the keys after it
+  # must not be lost. A second file must not keep keys from the first.
+  command -v jq >/dev/null 2>&1 || skip_test "jq not found"
+  local deriv_desc="${bids_examples}/synthetic/derivatives/fmriprep/dataset_description.json"
+  local bold_json="${bids_examples}/ds001/task-balloonanalogrisktask_bold.json"
+  local err
+  declare -A json_data
+  err="$(libBIDSsh_json_to_associative_array "$deriv_desc" json_data 2>&1 >/dev/null)"
+  libBIDSsh_json_to_associative_array "$deriv_desc" json_data
+  assert_equals "" "$err" "fmriprep dataset_description.json: no error" || return 1
+  local generated_by="${json_data[GeneratedBy]:-NA}"
+  local acknowledge="${json_data[HowToAcknowledge]:-NA}"
+  assert_equals 'array:{"Name":"fMRIPrep",' "${generated_by:0:25}" \
+    "GeneratedBy: array of objects as JSON text" || return 1
+  assert_equals "string:Please cite our paper" "${acknowledge:0:28}" \
+    "HowToAcknowledge after GeneratedBy is kept" || return 1
+
+  libBIDSsh_json_to_associative_array "$bold_json" json_data
+  assert_equals "RepetitionTime TaskName " \
+    "$(printf '%s\n' "${!json_data[@]}" | sort | tr '\n' ' ')" \
+    "ds001 bold sidecar: no stale keys from the first file" || return 1
+  # jq 1.6 writes 2.0 as "2"; jq 1.7 and later keep "2.0".
+  local repetition_time="${json_data[RepetitionTime]:-NA}"
+  [[ "$repetition_time" =~ ^number:2(\.0)?$ ]] && repetition_time="number:2"
+  assert_equals "number:2" "$repetition_time" "ds001 RepetitionTime" || return 1
+  return 0
+}
+
 # Build a small self-contained BIDS-shaped fixture with a .bidsignore.
 # Echoes the temp directory path (below test_tmpdir, removed on exit).
 _make_bidsignore_fixture() {
@@ -1162,6 +1192,7 @@ run_test "Public API: libBIDSsh_table_iterator on bids-examples" test_table_iter
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Public API: libBIDSsh_json_to_associative_array round-trip" test_json_to_associative_array_roundtrip
 run_test "Public API: libBIDSsh_json_to_associative_array errors" test_json_to_associative_array_errors
+run_test "Public API: libBIDSsh_json_to_associative_array on bids-examples" test_json_to_associative_array_bids_examples
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
 run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore
