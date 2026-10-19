@@ -12,7 +12,7 @@ for neuroimaging data. The design follows a pipeline pattern: functions accept a
 TSV string and return a processed TSV string.
 
 **Key characteristics:**
-- ~810-line Bash library, functional/pipeline style
+- Bash library (about 1500 lines), functional/pipeline style
 - AWK-based data processing for TSV filtering and column operations
 - Extensible custom entity support via JSON configurations
 - Zero-dependency core (`jq` optional, for JSON features and custom entities)
@@ -97,13 +97,18 @@ Each row is one file. Columns:
 - `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...); `NA` at the dataset root
 - Both are computed from the path **relative to the dataset root**, so directories
   above the root (e.g. `/data/derivatives/study/`) have no effect.
-- BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...
+- BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...; each value
+  is the full `<key>-<label>` pair (`sub-01`, `run-1`), not the bare label (`01`)
 - `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...); for a core or table file
   (`dataset_description.json`, `participants.*`, `samples.*`, `phenotype/*`) the
   whole stem (e.g. `participants`, `dataset_description`)
-- `extension` — file extension
+- `extension` — file extension **without** the leading dot (`nii.gz`, `json`); the
+  BIDS schema (`objects.extensions[].value`) writes it with the dot (`.nii.gz`)
 - `path` — full file path
 - *(optional)* `json_path` — added by `..._json_rows_to_column_json_path`
+
+Values are written without escapes. A path that contains a tab or a newline breaks
+the TSV structure (a tab moves the columns, a newline splits the row).
 
 ### Public API (8 functions)
 
@@ -135,7 +140,7 @@ libBIDS.sh/
 ├── libBIDS.sh                    # Main library (all functionality)
 ├── test_libBIDS.sh               # Unit test suite (self-contained runner)
 ├── README.md                     # User documentation + API reference
-├── schema.json                   # BIDS specification (authoritative source)
+├── schema.json                   # BIDS schema (NOT tracked in git; download it)
 ├── generate_entity_patterns.sh   # Utility: generate glob patterns from schema.json
 ├── custom/                       # Custom entity definitions
 │   └── custom_entities.json.tpl  # Template for custom entities
@@ -184,7 +189,10 @@ cd bids-examples
 ### Development Utilities
 
 ```bash
-# Generate the schema-derived parser blocks (requires schema.json + jq)
+# Generate the schema-derived parser blocks (requires schema.json + jq).
+# schema.json is not tracked in git. The script reads ./schema.json from the
+# CWD, so run it from the repository root after you download the schema:
+curl -LO https://bids-specification.readthedocs.io/en/latest/schema.json
 ./generate_entity_patterns.sh
 ```
 
@@ -331,7 +339,7 @@ fi
 
 ### libBIDS.sh
 
-**Purpose**: Main library containing all functionality (~810 lines).
+**Purpose**: Main library containing all functionality (about 1500 lines).
 
 **Approximate section map** (verify with `grep -n '^libBIDSsh_\|^_libBIDSsh_' libBIDS.sh`):
 - Version check + strict mode — top of file
@@ -341,6 +349,9 @@ fi
 - `_libBIDSsh_parse_filename` — regex filename parser
 - `libBIDSsh_extension_json_rows_to_column_json_path` — JSON sidecar folding
 - `_libBIDSsh_load_custom_entities` — custom entity loader
+- `_libBIDSsh_compile_bidsignore_line`, `_libBIDSsh_compile_bidsignore`,
+  `_libBIDSsh_path_is_ignored` — `.bidsignore` pattern compile and match
+- `libBIDSsh_apply_bidsignore` — drop `.bidsignore`-excluded rows from a table
 - `libBIDSsh_parse_bids_to_table` — core BIDS parser (entity/suffix/extension globs)
 - `libBIDSsh_table_column_to_array` — column → array
 - `libBIDSsh_table_iterator` — row iteration with sorting
@@ -356,13 +367,18 @@ custom-entity extension guide, troubleshooting.
 
 Generates the schema-derived blocks of the parser (entity key and name lists for
 the columns, the suffix and extension glob alternations, the datatype regex)
-from the BIDS `schema.json`. Requires `schema.json` and `jq`. `schema.json` is the authoritative BIDS spec source.
+from the BIDS `schema.json`. Requires `schema.json` and `jq`. `schema.json` is the authoritative BIDS spec source, but it is **not
+tracked** in git (`.gitignore` lists it). Download it from
+<https://bids-specification.readthedocs.io/en/latest/schema.json> into the
+repository root. The script reads `./schema.json` relative to the CWD, so run it
+from the repository root.
 
 ### custom/custom_entities.json.tpl
 
 Template for defining custom BIDS entities. Copy to `custom/custom_entities.json`
 to activate (the parser loads every `custom/*.json`). The `custom/` directory is
-found next to the real `libBIDS.sh` file, also when it is sourced through a symlink.
+found next to the real `libBIDS.sh` file, also when it is sourced through a symlink,
+and not in the CWD or the dataset.
 Only `key` and `name` have an effect. `pattern` is accepted but is not used for
 matching (files are selected by suffix and extension only).
 
@@ -379,6 +395,10 @@ matching (files are selected by suffix and extension only).
 ```
 
 ### bids-examples/run_tests.sh
+
+`bids-examples/` is a git submodule pinned to one upstream commit (about 110
+datasets). `run_tests.sh` belongs to the upstream bids-examples repository, not to
+this project.
 
 Validates BIDS compliance of example datasets. Features:
 - accepts an optional dataset list (defaults to all dirs except `node_modules`)
