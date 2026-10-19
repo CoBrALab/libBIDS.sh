@@ -1,0 +1,91 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  # No branch filter: stacked PRs target branches other than master.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: bash ${{ matrix.bash }} / ${{ matrix.awk }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # bash: "system" uses the runner's bash; a version number builds that
+        # GNU bash release from source (cached). awk: the apt package that
+        # provides "awk" first in PATH.
+        bash: [system]
+        awk: [gawk]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq "${{ matrix.awk }}"
+          mkdir -p "$RUNNER_TEMP/bin"
+          ln -sf "$(command -v "${{ matrix.awk }}")" "$RUNNER_TEMP/bin/awk"
+          echo "$RUNNER_TEMP/bin" >>"$GITHUB_PATH"
+
+      - name: Cache bash ${{ matrix.bash }}
+        if: matrix.bash != 'system'
+        id: cache-bash
+        uses: actions/cache@v4
+        with:
+          path: ~/bash-${{ matrix.bash }}
+          key: bash-${{ matrix.bash }}-${{ runner.os }}-v1
+
+      - name: Build bash ${{ matrix.bash }}
+        if: matrix.bash != 'system' && steps.cache-bash.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL "https://ftpmirror.gnu.org/bash/bash-${{ matrix.bash }}.tar.gz" | tar xz
+          cd "bash-${{ matrix.bash }}"
+          # Old bash sources do not build with the strict defaults of new GCC.
+          ./configure --prefix="$HOME/bash-${{ matrix.bash }}" --without-bash-malloc \
+            CFLAGS="-O2 -std=gnu89 -Wno-implicit-function-declaration -Wno-implicit-int -Wno-incompatible-pointer-types -Wno-int-conversion" >/dev/null
+          make -j"$(nproc)" >/dev/null
+          make install >/dev/null
+
+      - name: Put bash ${{ matrix.bash }} first in PATH
+        if: matrix.bash != 'system'
+        run: echo "$HOME/bash-${{ matrix.bash }}/bin" >>"$GITHUB_PATH"
+
+      - name: Show versions
+        run: |
+          bash --version | head -n 1
+          awk -W version 2>/dev/null | head -n 1 || awk --version | head -n 1
+          jq --version
+          git -C bids-examples log -1 --format='bids-examples %h %cs'
+
+      - name: Unit tests
+        run: bash ./test_libBIDS.sh
+
+      - name: Parse every bids-examples dataset
+        run: |
+          rc=0
+          for d in bids-examples/*/; do
+            [[ "$(basename "$d")" == node_modules ]] && continue
+            if ! out=$(bash ./libBIDS.sh "$d" 2>&1 >/dev/null); then
+              echo "::error::${d}: parser failed"; rc=1
+            elif [[ -n "$out" ]]; then
+              echo "::error::${d}: parser wrote to stderr: ${out}"; rc=1
+            fi
+          done
+          exit "$rc"
+
+  shellcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          shellcheck --version | head -n 2
+          shellcheck -S warning libBIDS.sh test_libBIDS.sh generate_entity_patterns.sh

@@ -22,6 +22,25 @@ macOS users: Apple's default Bash (3.2) is too old. You must upgrade to ≥ 4.3.
 
 See: https://apple.stackexchange.com/questions/193411/update-bash-to-version-4-0-on-osx
 
+## Testing
+
+The test datasets come from the
+[bids-examples](https://github.com/bids-standard/bids-examples) repository, which
+is a git submodule at `bids-examples/`. Clone with the submodule, then run the
+unit test suite from the repository root:
+
+```bash
+git clone --recurse-submodules https://github.com/CoBrALab/libBIDS.sh
+cd libBIDS.sh
+./test_libBIDS.sh
+```
+
+In a clone that does not have the submodule yet, run `git submodule update --init`.
+
+GitHub Actions (`.github/workflows/tests.yml`) runs the unit tests, parses every
+bids-examples dataset, and runs `shellcheck` for each push to `master` and for
+each pull request.
+
 ## Usage
 
 ### Sourcing the Library
