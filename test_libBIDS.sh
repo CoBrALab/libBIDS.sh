@@ -233,6 +233,11 @@ test_parse_bids_to_table_without_jq() {
   assert_equals "derivatives	datatype	subject" "$(head -n 1 <<<"$table" | cut -f 1-3)" \
     "header should start with derivatives, datatype, subject" || return 1
   assert_contains "sub-01" "$table" "table should contain sub-01" || return 1
+  # Without jq, the parser must give the same table as with jq.
+  local table_with_jq
+  table_with_jq=$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")
+  assert_equals "$table_with_jq" "$table" \
+    "ds001 table without jq should be the same as with jq" || return 1
   return 0
 }
 
