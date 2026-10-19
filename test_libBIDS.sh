@@ -630,7 +630,9 @@ test_drop_na_columns_bids_examples() {
   IFS=$'\t' read -r -a header_fields <<<"${table%%$'\n'*}"
   local expected="" i
   for ((i = 1; i <= ${#header_fields[@]}; i++)); do
-    if tail -n +2 <<<"$table" | cut -f "$i" | grep -qvx 'NA'; then
+    # grep -c reads all input; grep -q can exit early, and then cut gets
+    # SIGPIPE and pipefail makes the test fail at random.
+    if (($(tail -n +2 <<<"$table" | cut -f "$i" | grep -cvx 'NA' || true) > 0)); then
       expected+="${expected:+$'\t'}${header_fields[i - 1]}"
     fi
   done
