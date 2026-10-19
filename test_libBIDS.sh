@@ -885,6 +885,48 @@ test_table_iterator_array_names() {
   return 0
 }
 
+test_table_iterator_bids_examples() {
+  # Iterate a real table (ds001). Each row gives the same order as "sort"
+  # for the same keys, and the row array holds only the column names.
+  local table table2
+  table="$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds001")"
+  table2="$(libBIDSsh_parse_bids_to_table "${bids_examples}/ds002")"
+  local ncols nrows sc rc pc
+  ncols="$(head -n 1 <<<"$table" | awk -F'\t' '{print NF}')"
+  nrows="$(tail -n +2 <<<"$table" | wc -l | tr -d ' ')"
+  sc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x subject | cut -d: -f1)"
+  rc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x run | cut -d: -f1)"
+  pc="$(head -n 1 <<<"$table" | tr '\t' '\n' | grep -n -x path | cut -d: -f1)"
+  local expected
+  expected="$(tail -n +2 <<<"$table" |
+    sort --version-sort -t$'\t' "-k${sc},${sc}" "-k${rc},${rc}" | cut -f "${pc}")"
+
+  declare -A row
+  local n=0 bad_keys=0 got=""
+  while libBIDSsh_table_iterator "$table" row subject run; do
+    n=$((n + 1))
+    ((${#row[@]} == ncols)) || bad_keys=$((bad_keys + 1))
+    got+="${row[path]}"$'\n'
+  done
+  assert_equals "${nrows}" "$n" "ds001: one iteration for each data row" || return 1
+  assert_equals "0" "$bad_keys" "ds001: row keys are the column names only" || return 1
+  assert_equals "$expected" "${got%$'\n'}" "ds001: order is the same as sort" || return 1
+
+  # A direct call (not in "while" or "if") must not stop the test under set -e
+  libBIDSsh_table_iterator "$table" row subject run
+  assert_equals "$(head -n 1 <<<"$expected")" "${row[path]}" \
+    "ds001: direct call gives the first sorted row" || return 1
+
+  # The direct call leaves an open iteration on ds001, as a "break" does.
+  # A loop over a different table (ds002) must start at its first row.
+  local n2=0
+  n2="$(tail -n +2 <<<"$table2" | wc -l | tr -d ' ')"
+  n=0
+  while libBIDSsh_table_iterator "$table2" row; do n=$((n + 1)); done
+  assert_equals "${n2}" "$n" "ds002 after a break on ds001: all rows" || return 1
+  return 0
+}
+
 test_json_to_associative_array() {
   command -v jq >/dev/null 2>&1 || skip_test "jq not found"
   local json_file
@@ -1031,6 +1073,7 @@ run_test "Public API: libBIDSsh_table_iterator state" test_table_iterator_state
 run_test "Public API: libBIDSsh_table_iterator empty fields" test_table_iterator_empty_fields
 run_test "Public API: libBIDSsh_table_iterator no globals" test_table_iterator_no_globals
 run_test "Public API: libBIDSsh_table_iterator array names" test_table_iterator_array_names
+run_test "Public API: libBIDSsh_table_iterator on bids-examples" test_table_iterator_bids_examples
 run_test "Public API: libBIDSsh_json_to_associative_array" test_json_to_associative_array
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
