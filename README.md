@@ -99,6 +99,16 @@ ignores (see [`.bidsignore` support](#bidsignore-support) below).
   tokens in the name are not checked (permissive matching).
 - The parser follows symbolic links to directories (for example a `sub-02` link to
   other storage). A link loop is reported by `find` on stderr and is not followed.
+- A file whose whole stem is a schema suffix is also a row, at any level. These are
+  inheritance-principle sidecars with no entities, such as `T1w.json`,
+  `events.json` or `physio.json`.
+- The tabular files `participants.tsv`/`.json`, `samples.tsv`/`.json` and
+  `phenotype/<name>.tsv`/`.json` are rows when they are at the dataset root or at
+  the root of a `derivatives/<pipeline>/` directory. Phenotype rows have datatype
+  `phenotype`.
+- `dataset_description.json` is a row (at any level).
+- Other core files (`README`, `CHANGES`, `LICENSE`, `CITATION.cff`,
+  `genetic_info.json`) are not rows.
 - A directory-type recording (extension `.ds`, `.mefd` or `.ome.zarr`) is one row
   for the directory. The files inside it are not rows.
 - Files and directories whose name starts with `.` are skipped.
@@ -114,7 +124,11 @@ name (`subject`).
 - `derivatives`: Pipeline name if in derivatives folder
 - `datatype`: BIDS datatype (anat, func, dwi, etc.)
 - BIDS entities: `subject` (key `sub`), `session` (key `ses`), `task`, `acquisition` (key `acq`), `run`, etc.
-- `suffix`: File suffix (bold, T1w, dwi, etc.)
+- `suffix`: File suffix (bold, T1w, dwi, etc.). A core or table file has no
+  entities, and its suffix is the whole stem: `dataset_description`,
+  `participants`, `samples`, or the name of the phenotype table (for
+  `phenotype/acds_adult.tsv` the suffix is `acds_adult`). Thus
+  `-r "suffix:^description$"` finds atlas description files only.
 - `extension`: File extension
 - `path`: Full file path
 

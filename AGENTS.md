@@ -35,7 +35,10 @@ Directory tree → filename parsing → TSV table → filtering / extraction / i
 
 1. **Pattern matching**: a Bash extended-glob pattern `*_<suffix><extension>`
    selects files by schema suffix and extension only. Entity tokens are not
-   checked during matching (permissive matching).
+   checked during matching (permissive matching). Also matched: suffix-only
+   sidecars (`T1w.json`), and `participants`/`samples`/`phenotype/*` `.tsv`/`.json`
+   at the dataset (or derivatives pipeline) root. `find -L` lists the candidates;
+   it follows symlinked directories and does not go into `.ds`/`.mefd`/`.ome.zarr`.
 2. **Filename parsing**: regex-based entity extraction into associative arrays.
 3. **JSON sidecar matching**: exact filename matching only (no inheritance
    resolution).
@@ -89,7 +92,9 @@ Each row is one file. Columns:
 - `derivatives` — pipeline name if under a `derivatives/` folder, else `NA`
 - `datatype` — BIDS datatype (`anat`, `func`, `dwi`, ...)
 - BIDS entities — `subject`, `session`, `task`, `acquisition`, `run`, ...
-- `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...)
+- `suffix` — file suffix (`bold`, `T1w`, `dwi`, ...); for a core or table file
+  (`dataset_description.json`, `participants.*`, `samples.*`, `phenotype/*`) the
+  whole stem (e.g. `participants`, `dataset_description`)
 - `extension` — file extension
 - `path` — full file path
 - *(optional)* `json_path` — added by `..._json_rows_to_column_json_path`
@@ -349,6 +354,8 @@ from the BIDS `schema.json`. Requires `schema.json` and `jq`. `schema.json` is t
 Template for defining custom BIDS entities. Copy to `custom/custom_entities.json`
 to activate (the parser loads every `custom/*.json`). The `custom/` directory is
 found next to the real `libBIDS.sh` file, also when it is sourced through a symlink.
+Only `key` and `name` have an effect. `pattern` is accepted but is not used for
+matching (files are selected by suffix and extension only).
 
 ```json
 {

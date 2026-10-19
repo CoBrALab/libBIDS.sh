@@ -281,7 +281,16 @@ _libBIDSsh_parse_filename() {
   # Split into parts separated by _
   local -a parts
   local i
-  IFS='_' read -ra parts <<<"${name_no_ext}"
+  # Core and table files have no entities: their suffix is the whole stem
+  # (dataset_description, participants, samples, or the name of a phenotype
+  # table). Thus dataset_description.json does not look like an atlas
+  # '_description.json' file.
+  if [[ ${name_no_ext} =~ ^(dataset_description|participants|samples)$ ||
+    ${arr[datatype]} == "phenotype" ]]; then
+    parts=("${name_no_ext}")
+  else
+    IFS='_' read -ra parts <<<"${name_no_ext}"
+  fi
 
   # Process middle parts which are _<key>-<value>
   for ((i = 0; i < ${#parts[@]} - 1; i++)); do
@@ -863,6 +872,14 @@ libBIDSsh_parse_bids_to_table() {
   local extensions="@(.ave|.bdf|.bval|.bvec|.chn|.con|.dat|.ds|.dlabel.nii|.edf|.eeg|.fdt|.fif|.func.gii|.jpg|.json|.kdf|.label.gii|.md|.mefd|.mhd|.mrk|.ome.zarr|.nii|.nii.gz|.nwb|.ome.btf|.ome.tif|.png|.pos|.raw|.rst|.set|.snirf|.sqd|.tif|.trg|.tsv|.tsv.gz|.txt|.vhdr|.vmrk)"
 
   local pattern="*${suffixes}${extensions}"
+  # A file whose whole stem is a suffix: an inheritance-principle sidecar with
+  # no entities, such as T1w.json or events.json (at any level).
+  local stem_pattern="${suffixes#_}${extensions}"
+  # Tabular files (schema rules.files.common.tables with a stem): participants
+  # and samples, and phenotype/<name>, with extension .tsv or .json. They are
+  # matched at the dataset root and at the root of a derivatives/<pipeline>.
+  local table_pattern="?(?(*/)derivatives/+([!/])/)"
+  table_pattern+="@(participants|samples|phenotype/+([!/])).@(tsv|json)"
 
   # Save the caller's extglob option and restore it after the match.
   # 'shopt -p' returns non-zero when an option is off, thus '|| true'.
@@ -886,11 +903,12 @@ libBIDSsh_parse_bids_to_table() {
   local -a files=()
   local found rel
   while IFS= read -r -d '' found; do
+    rel="${found#"${find_root}"}"
+    rel="${rel#/}"
     # shellcheck disable=SC2053
-    if [[ ${found##*/} == ${pattern} ]]; then
+    if [[ ${found##*/} == ${pattern} || ${found##*/} == ${stem_pattern} ||
+      ${rel} == ${table_pattern} ]]; then
       # Make the path as the glob did: "${bidspath}/<relative path>"
-      rel="${found#"${find_root}"}"
-      rel="${rel#/}"
       files+=("${bidspath}/${rel}")
     fi
   done < <(find -L "${find_root}" -mindepth 1 \( -name '.*' -prune \) -o \

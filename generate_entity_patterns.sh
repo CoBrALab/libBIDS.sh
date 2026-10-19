@@ -44,5 +44,15 @@ printf '@(%s)\n' "$(jq -r '.objects.extensions[].value' schema.json \
   | paste -sd'|')"
 
 echo
+echo "### directory-type extensions (find prunes these; the directory is one row) ###"
+jq -r '.objects.extensions[].value' schema.json | grep -v -x -F '/' | sed -n 's:/$::p' \
+  | paste -sd' '
+
+echo
+echo "### table stems (rules.files.common.tables with a stem; '*' is phenotype/<name>) ###"
+jq -r '.rules.files.common.tables[] | select(.stem != null) | .stem' schema.json \
+  | paste -sd' '
+
+echo
 echo "### datatype regex (anchored to a whole path component; for _libBIDSsh_parse_filename) ###"
 printf '(^|/)(%s)$\n' "$(jq -r '.objects.datatypes | keys[]' schema.json | paste -sd'|')"

@@ -444,6 +444,42 @@ ${root}/sub-01/micr/sub-01_sample-A_SPIM.ome.zarr" "$paths" \
     "libBIDSsh_apply_bidsignore drops the .ds directory row for '*.ds/'"
 }
 
+test_parse_bids_to_table_core_files() {
+  # Table files (participants, samples, phenotype/*) and suffix-only sidecars
+  # (T1w.json) are rows. Their suffix is the whole stem. dataset_description.json
+  # gets suffix 'dataset_description', not the atlas suffix 'description'.
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  mkdir -p "${root}/sub-01/anat" "${root}/phenotype" "${root}/derivatives/fs"
+  local f
+  for f in participants.tsv participants.json samples.tsv samples.json \
+    phenotype/acds_adult.tsv phenotype/acds_adult.json dataset_description.json \
+    T1w.json acq-x_T1w.json README CHANGES genetic_info.json \
+    sub-01/participants.tsv sub-01/anat/sub-01_T1w.nii.gz \
+    derivatives/fs/participants.tsv derivatives/fs/dataset_description.json; do
+    : >"${root}/${f}"
+  done
+
+  local rows
+  rows=$(libBIDSsh_parse_bids_to_table "$root" |
+    awk -F '\t' -v root="${root}/" 'NR > 1 {
+      sub(root, "", $NF); print $1, $2, $3, $10, $(NF - 2), $(NF - 1), $NF
+    }' | LC_ALL=C sort)
+  assert_equals "NA NA NA NA T1w json T1w.json
+NA NA NA NA dataset_description json dataset_description.json
+NA NA NA NA participants json participants.json
+NA NA NA NA participants tsv participants.tsv
+NA NA NA NA samples json samples.json
+NA NA NA NA samples tsv samples.tsv
+NA NA NA acq-x T1w json acq-x_T1w.json
+NA anat sub-01 NA T1w nii.gz sub-01/anat/sub-01_T1w.nii.gz
+NA phenotype NA NA acds_adult json phenotype/acds_adult.json
+NA phenotype NA NA acds_adult tsv phenotype/acds_adult.tsv
+fs NA NA NA dataset_description json derivatives/fs/dataset_description.json
+fs NA NA NA participants tsv derivatives/fs/participants.tsv" "$rows" \
+    "core, table and suffix-only files with the stem as suffix"
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1552,6 +1588,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table .func.gii" test_parse_bids_t
 run_test "Public API: libBIDSsh_parse_bids_to_table keeps caller state" test_parse_bids_to_table_no_leaks
 run_test "Public API: libBIDSsh_parse_bids_to_table follows symlinked dirs" test_parse_bids_to_table_symlinked_dirs
 run_test "Public API: libBIDSsh_parse_bids_to_table directory recordings" test_parse_bids_to_table_directory_recordings
+run_test "Public API: libBIDSsh_parse_bids_to_table core and table files" test_parse_bids_to_table_core_files
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
