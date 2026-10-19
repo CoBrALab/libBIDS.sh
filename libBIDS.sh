@@ -1291,6 +1291,7 @@ libBIDSsh_json_to_associative_array() {
   done <"$tmp_file"
   rm -f "$tmp_file"
   for key in "${!__libBIDSsh_json_kv[@]}"; do
+    # shellcheck disable=SC2034 # arr_ref is a nameref to the caller's array
     arr_ref["$key"]="${__libBIDSsh_json_kv[$key]}"
   done
   return 0
