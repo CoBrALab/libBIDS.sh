@@ -1243,6 +1243,38 @@ test_apply_bidsignore_empty_fields() {
   return $rc
 }
 
+test_main_entrypoint() {
+  # Run libBIDS.sh as a script (with the bash that runs the tests).
+  local script="${test_dir}/libBIDS.sh"
+  local out err rc
+
+  # No argument: error and usage on stderr, nothing on stdout, exit 1.
+  rc=0
+  out=$("$BASH" "$script" 2>"${test_tmpdir}/main.err") || rc=$?
+  err=$(<"${test_tmpdir}/main.err")
+  assert_equals "1" "$rc" "no argument exits 1" || return 1
+  assert_equals "" "$out" "no argument writes nothing to stdout" || return 1
+  assert_contains "error: the first argument must be a path" "$err" "no argument error on stderr" || return 1
+
+  # --help and -h: usage on stdout, nothing on stderr, exit 0.
+  local flag
+  for flag in --help -h; do
+    rc=0
+    out=$("$BASH" "$script" "$flag" 2>"${test_tmpdir}/main.err") || rc=$?
+    err=$(<"${test_tmpdir}/main.err")
+    assert_equals "0" "$rc" "$flag exits 0" || return 1
+    assert_contains "Usage: libBIDS.sh" "$out" "$flag usage on stdout" || return 1
+    assert_contains "--no-bidsignore" "$out" "$flag lists parser options" || return 1
+    assert_equals "" "$err" "$flag writes nothing to stderr" || return 1
+  done
+
+  # --help after another option also prints the usage.
+  rc=0
+  out=$("$BASH" "$script" --no-bidsignore --help 2>/dev/null) || rc=$?
+  assert_equals "0" "$rc" "--no-bidsignore --help exits 0" || return 1
+  assert_contains "Usage: libBIDS.sh" "$out" "--no-bidsignore --help usage on stdout" || return 1
+}
+
 echo "Starting libBIDS.sh test suite..."
 echo "---"
 
@@ -1285,6 +1317,7 @@ run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore
 run_test "Public API: libBIDSsh_parse_bids_to_table root-anchored defaults" test_bidsignore_parser_root_anchored_defaults
 run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore
 run_test "Public API: libBIDSsh_apply_bidsignore empty fields" test_apply_bidsignore_empty_fields
+run_test "Main block: direct execution" test_main_entrypoint
 
 echo "---"
 echo "Test summary:"

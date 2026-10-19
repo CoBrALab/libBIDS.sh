@@ -68,6 +68,11 @@ Run directly to dump dataset as TSV:
 ./libBIDS.sh bids-examples/ds001
 ```
 
+Usage: `./libBIDS.sh [--no-bidsignore|--no-default-ignores] [--] <dir>`.
+The options are the same as for `libBIDSsh_parse_bids_to_table`. Use `-h` or
+`--help` to show the usage (on stdout, exit status 0). With no argument, the
+script writes an error and the usage to stderr and exits with status 1.
+
 ## Core Functions
 
 ### `libBIDSsh_parse_bids_to_table`

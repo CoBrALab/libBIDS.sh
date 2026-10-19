@@ -289,11 +289,25 @@ jq -r 'to_entries[] |
 ```bash
 # Detect sourced vs direct execution
 if ! (return 0 2>/dev/null); then
+  # _libBIDSsh_usage is defined here; it prints the usage text (heredoc) to stdout.
+
   if [[ $# -eq 0 ]]; then
     echo 'error: the first argument must be a path to a bids dataset' >&2
+    _libBIDSsh_usage >&2
     exit 1
   fi
-  libBIDSsh_parse_bids_to_table "${1}"
+  # Look for -h/--help among the options (stop at "--").
+  for _libBIDSsh_arg in "$@"; do
+    case "${_libBIDSsh_arg}" in
+      --) break ;;
+      -h | --help)
+        _libBIDSsh_usage
+        exit 0
+        ;;
+    esac
+  done
+  unset _libBIDSsh_arg
+  libBIDSsh_parse_bids_to_table "$@"
 fi
 ```
 
