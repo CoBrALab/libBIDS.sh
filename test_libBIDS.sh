@@ -181,6 +181,61 @@ test_parse_bids_to_table() {
   return 0
 }
 
+test_parse_bids_to_table_without_jq() {
+  # The core parser must work when jq is not installed and no
+  # custom/*.json file exists.
+  shopt -s nullglob
+  local custom_files=("${test_dir}"/custom/*.json)
+  shopt -u nullglob
+  if ((${#custom_files[@]} > 0)); then
+    skip_test "custom/*.json exists, thus the parser needs jq"
+  fi
+
+  # Make a PATH with all commands of the current PATH, but not jq.
+  local nojq_bin
+  nojq_bin=$(mktemp -d "${test_tmpdir}/nojq.XXXXXX")
+  local dir
+  local cmd
+  local -a path_dirs
+  IFS=: read -r -a path_dirs <<<"$PATH"
+  for dir in ${path_dirs[@]+"${path_dirs[@]}"}; do
+    [[ -d "$dir" ]] || continue
+    for cmd in "$dir"/*; do
+      [[ -x "$cmd" && ! -d "$cmd" ]] || continue
+      [[ "${cmd##*/}" == "jq" ]] && continue
+      [[ -e "${nojq_bin}/${cmd##*/}" ]] && continue
+      ln -s "$cmd" "${nojq_bin}/${cmd##*/}"
+    done
+  done
+
+  # Do not use "|| rc=$?" here: it would turn off errexit in the
+  # command substitution and hide a failed command in the parser.
+  local table
+  local rc
+  local err_file="${nojq_bin}.stderr"
+  set +e
+  table=$(
+    set -e
+    exec 2>"$err_file"
+    PATH="$nojq_bin"
+    hash -r
+    if command -v jq >/dev/null 2>&1; then
+      echo "jq is still in PATH" >&2
+      exit 2
+    fi
+    libBIDSsh_parse_bids_to_table "${bids_examples}/ds001"
+  )
+  rc=$?
+  set -e
+
+  assert_equals "0" "$rc" "parser should succeed without jq" || return 1
+  assert_equals "" "$(<"$err_file")" "parser should write nothing to stderr" || return 1
+  assert_equals "derivatives	datatype	subject" "$(head -n 1 <<<"$table" | cut -f 1-3)" \
+    "header should start with derivatives, datatype, subject" || return 1
+  assert_contains "sub-01" "$table" "table should contain sub-01" || return 1
+  return 0
+}
+
 test_table_filter() {
   local table="col1	col2	col3
 A	B	C
@@ -1281,6 +1336,7 @@ echo "---"
 run_test "Internal: _libBIDSsh_parse_filename" test_parse_filename
 run_test "Internal: _libBIDSsh_parse_filename datatype/derivatives" test_parse_filename_datatype_derivatives
 run_test "Public API: libBIDSsh_parse_bids_to_table" test_parse_bids_to_table
+run_test "Public API: libBIDSsh_parse_bids_to_table without jq" test_parse_bids_to_table_without_jq
 run_test "Public API: libBIDSsh_table_filter" test_table_filter
 run_test "Public API: libBIDSsh_table_filter patterns and --invert" test_table_filter_patterns
 run_test "Public API: libBIDSsh_table_filter --invert complement (ds001)" test_table_filter_invert_complement
