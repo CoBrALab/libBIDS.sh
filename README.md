@@ -27,7 +27,7 @@ See: https://apple.stackexchange.com/questions/193411/update-bash-to-version-4-0
 The test datasets come from the
 [bids-examples](https://github.com/bids-standard/bids-examples) repository, which
 is a git submodule at `bids-examples/`. Clone with the submodule, then run the
-unit test suite from the repository root:
+unit test suite (you can run it from any directory):
 
 ```bash
 git clone --recurse-submodules https://github.com/CoBrALab/libBIDS.sh
@@ -35,7 +35,10 @@ cd libBIDS.sh
 ./test_libBIDS.sh
 ```
 
-In a clone that does not have the submodule yet, run `git submodule update --init`.
+Each assertion that fails, and each command that fails, makes its test fail.
+If the submodule is missing, the suite stops with an error that tells you to
+run `git submodule update --init`. The JSON test is skipped if `jq` is not
+installed.
 
 GitHub Actions (`.github/workflows/tests.yml`) runs the unit tests, parses every
 bids-examples dataset, and runs `shellcheck` for each push to `master` and for
