@@ -1108,7 +1108,35 @@ test_bidsignore_matcher() {
   _chk "a/b/anchored.nii.gz" 0 "anchored path matches at root"                   # ignored
   _chk "x/a/b/anchored.nii.gz" 1 "anchored path does not match at depth"         # kept
   _chk "sub-01/anat/deep_FLASH.nii.gz" 0 "globstar matches across dirs"          # ignored
-  _chk ".git/config" 0 "default ignore: .git**"                                  # ignored
+  _chk ".git/config" 0 "default ignore: .**"                                     # ignored
+
+  rm -rf "$root"
+  return $rc
+}
+
+test_bidsignore_defaults_match_validator() {
+  # The defaults follow bids-validator: root-anchored sourcedata/ code/ stimuli/
+  # log/ doc/, and '.**'. Directories with these names below the root are kept.
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  _libBIDSsh_compile_bidsignore "$root" 1
+
+  local rc=0
+  _chk() { # path expected(0=ignored,1=kept) msg
+    if _libBIDSsh_path_is_ignored "$1"; then local got=0; else local got=1; fi
+    assert_equals "$2" "$got" "$3" || rc=1
+  }
+  _chk "doc/sub-01_T1w.nii.gz" 0 "default ignore: /doc/"
+  _chk "log/sub-01_T1w.json" 0 "default ignore: /log/"
+  _chk "stimuli/sub-01_T1w.nii.gz" 0 "default ignore: /stimuli/"
+  _chk ".hidden/sub-01_T1w.nii.gz" 0 "default ignore: .** at root"
+  _chk "sub-01/anat/.sub-01_T1w.nii.gz" 0 "default ignore: .** at depth"
+  _chk "derivatives/p/code/sub-01_T1w.json" 1 "derivatives/p/code/ kept"
+  _chk "derivatives/p/log/sub-01_T1w.json" 1 "derivatives/p/log/ kept"
+  _chk "derivatives/p/sourcedata/sub-01/anat/sub-01_T1w.nii.gz" 1 \
+    "derivatives/p/sourcedata/ kept"
+  _chk "sub-01/code/sub-01_T1w.nii.gz" 1 "code/ below the root kept"
+  _chk "docs/sub-01_T1w.nii.gz" 1 "docs/ not a validator default"
 
   rm -rf "$root"
   return $rc
@@ -1141,6 +1169,38 @@ test_bidsignore_parser() {
   return $rc
 }
 
+test_bidsignore_parser_root_anchored_defaults() {
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  local files=(
+    "sub-01/anat/sub-01_T1w.nii.gz"
+    "doc/sub-01_T1w.nii.gz"
+    "code/sub-01_T1w.nii.gz"
+    "derivatives/p/code/sub-01_T1w.json"
+    "derivatives/p/log/sub-01_T1w.json"
+    "derivatives/p/sourcedata/sub-01/anat/sub-01_T1w.nii.gz"
+  )
+  local f
+  for f in "${files[@]}"; do
+    mkdir -p "${root}/$(dirname "$f")"
+    : >"${root}/${f}"
+  done
+
+  local table rc=0
+  table=$(libBIDSsh_parse_bids_to_table "$root")
+  assert_equals "4" "$(_row_count "$table")" "root doc/ and code/ dropped" || rc=1
+  [[ "$table" != *"${root}/doc/"* ]] || { echo "    doc/ not dropped"; rc=1; }
+  assert_contains "derivatives/p/code/sub-01_T1w.json" "$table" \
+    "derivatives code/ kept" || rc=1
+  assert_contains "derivatives/p/log/sub-01_T1w.json" "$table" \
+    "derivatives log/ kept" || rc=1
+  assert_contains "derivatives/p/sourcedata/sub-01/anat/sub-01_T1w.nii.gz" "$table" \
+    "derivatives sourcedata/ kept" || rc=1
+
+  rm -rf "$root"
+  return $rc
+}
+
 test_apply_bidsignore() {
   local root
   root=$(_make_bidsignore_fixture)
@@ -1152,6 +1212,32 @@ test_apply_bidsignore() {
 
   local rc=0
   assert_equals "$default" "$applied" "apply_bidsignore matches parser default" || rc=1
+
+  rm -rf "$root"
+  return $rc
+}
+
+test_apply_bidsignore_empty_fields() {
+  # Empty TSV fields must not move the path column (IFS tab merging).
+  local root
+  root=$(mktemp -d "${test_tmpdir}/fixture.XXXXXX")
+  local tab=$'\t'
+  local header="derivatives${tab}desc${tab}path"
+  local kept="NA${tab}${tab}${root}/sub-01/anat/sub-01_T1w.nii.gz"
+  local dropped="NA${tab}${tab}${root}/doc/sub-01_T1w.nii.gz"
+  local table
+  table=$(printf '%s\n' "$header" "$kept" "$dropped")
+
+  local applied rc=0
+  applied=$(libBIDSsh_apply_bidsignore "$table" "$root") || rc=1
+  assert_equals "$(printf '%s\n' "$header" "$kept")" "$applied" \
+    "row with empty field kept, doc/ row dropped" || rc=1
+
+  # Empty header field before the path column.
+  local header2="derivatives${tab}${tab}path"
+  applied=$(libBIDSsh_apply_bidsignore "$(printf '%s\n' "$header2" "$kept")" "$root") || rc=1
+  assert_equals "$(printf '%s\n' "$header2" "$kept")" "$applied" \
+    "empty header field does not shift path column" || rc=1
 
   rm -rf "$root"
   return $rc
@@ -1194,8 +1280,11 @@ run_test "Public API: libBIDSsh_json_to_associative_array round-trip" test_json_
 run_test "Public API: libBIDSsh_json_to_associative_array errors" test_json_to_associative_array_errors
 run_test "Public API: libBIDSsh_json_to_associative_array on bids-examples" test_json_to_associative_array_bids_examples
 run_test "Internal: _libBIDSsh_path_is_ignored (.bidsignore matcher)" test_bidsignore_matcher
+run_test "Internal: default ignores match bids-validator" test_bidsignore_defaults_match_validator
 run_test "Public API: libBIDSsh_parse_bids_to_table .bidsignore" test_bidsignore_parser
+run_test "Public API: libBIDSsh_parse_bids_to_table root-anchored defaults" test_bidsignore_parser_root_anchored_defaults
 run_test "Public API: libBIDSsh_apply_bidsignore" test_apply_bidsignore
+run_test "Public API: libBIDSsh_apply_bidsignore empty fields" test_apply_bidsignore_empty_fields
 
 echo "---"
 echo "Test summary:"
