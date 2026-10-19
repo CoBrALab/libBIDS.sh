@@ -303,7 +303,9 @@ _libBIDSsh_parse_filename() {
 libBIDSsh_extension_json_rows_to_column_json_path() {
   # Convert JSON file rows into a json_path column in the table data
   # Usage: libBIDSsh_extension_json_rows_to_column_json_path "${table_data}"
-  # Returns: Table data with json_path column added through stdout
+  # Returns: Table data with json_path column added through stdout.
+  #   Empty lines are ignored. If the table already has a json_path column,
+  #   the table is returned unchanged, so a second call has no effect.
   # Example:
   #   updated=$(libBIDSsh_extension_json_rows_to_column_json_path "$data")
   local table_data="$1"
@@ -329,9 +331,24 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
       exit 1;
     }
 
+    if ("json_path" in header_map) {
+      # Already processed: pass the table through unchanged
+      passthrough = 1;
+      print $0;
+      next;
+    }
+
     print $0, "json_path";  # add json_path column
     next;
   }
+
+  passthrough {
+    print $0;
+    next;
+  }
+
+  # Skip empty lines (for example a trailing newline)
+  NF == 0 { next; }
 
   {
     row[NR] = $0;
@@ -359,7 +376,9 @@ libBIDSsh_extension_json_rows_to_column_json_path() {
   }
 
   END {
+    if (passthrough) exit;
     for (ln = 2; ln <= NR; ln++) {
+      if (!(ln in line_nums)) continue;  # skipped empty line
       key = row_key[ln];
       is_json = (ln in json_row);
       has_match = (key in has_non_json);
